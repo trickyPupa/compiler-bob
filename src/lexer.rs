@@ -1,60 +1,41 @@
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 use super::token::{Token, TokenType};
 
-mod map {
-    use super::*;
-    use std::collections::HashMap;
-    use std::sync::OnceLock;
+static OPERATOPS_MAP: LazyLock<HashMap<&'static str, TokenType>> = LazyLock::new(|| {
+    HashMap::from([
+        ("==", TokenType::EQEQ),
+        ("!=", TokenType::NEQ),
+        ("<=", TokenType::LTEQ),
+        (">=", TokenType::GTEQ),
+        ("&&", TokenType::AND),
+        ("||", TokenType::OR),
+        ("+", TokenType::PLUS),
+        ("-", TokenType::MINUS),
+        ("*", TokenType::STAR),
+        ("/", TokenType::SLASH),
+        ("=", TokenType::EQ),
+        ("<", TokenType::LT),
+        (">", TokenType::GT),
+        ("!", TokenType::EXCL),
+        ("(", TokenType::LPAREN),
+        (")", TokenType::RPAREN),
+        ("{", TokenType::LBRACE),
+        ("}", TokenType::RBRACE),
+        (";", TokenType::SEMICOLON),
+    ])
+});
 
-    static KEYWORDS_MAP: OnceLock<HashMap<&'static str, TokenType>> = OnceLock::new();
-
-    fn get_keywords_map() -> &'static HashMap<&'static str, TokenType> {
-        KEYWORDS_MAP.get_or_init(|| {
-            HashMap::from([
-                ("var", TokenType::VAR),
-                ("print", TokenType::PRINT),
-                ("if", TokenType::IF),
-                ("else", TokenType::ELSE),
-                ("while", TokenType::WHILE),
-            ])
-        })
-    }
-
-    pub fn keyword_lookup(word: &str) -> Option<&TokenType> {
-        get_keywords_map().get(word)
-    }
-
-    static OPERATOPS_MAP: OnceLock<HashMap<&'static str, TokenType>> = OnceLock::new();
-
-    fn get_operations_map() -> &'static HashMap<&'static str, TokenType> {
-        OPERATOPS_MAP.get_or_init(|| {
-            HashMap::from([
-                ("==", TokenType::EQEQ),
-                ("!=", TokenType::NEQ),
-                ("<=", TokenType::LTEQ),
-                (">=", TokenType::GTEQ),
-                ("&&", TokenType::AND),
-                ("||", TokenType::OR),
-                ("+", TokenType::PLUS),
-                ("-", TokenType::MINUS),
-                ("*", TokenType::STAR),
-                ("/", TokenType::SLASH),
-                ("=", TokenType::EQ),
-                ("<", TokenType::LT),
-                (">", TokenType::GT),
-                ("!", TokenType::EXCL),
-                ("(", TokenType::LPAREN),
-                (")", TokenType::RPAREN),
-                ("{", TokenType::LBRACE),
-                ("}", TokenType::RBRACE),
-                (";", TokenType::SEMICOLON),
-            ])
-        })
-    }
-
-    pub fn operation_lookup(word: &str) -> Option<&TokenType> {
-        get_operations_map().get(word)
-    }
-}
+static KEYWORDS_MAP: LazyLock<HashMap<&'static str, TokenType>> = LazyLock::new(|| {
+    HashMap::from([
+        ("var", TokenType::VAR),
+        ("print", TokenType::PRINT),
+        ("if", TokenType::IF),
+        ("else", TokenType::ELSE),
+        ("while", TokenType::WHILE),
+    ])
+});
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Lexer {
@@ -75,15 +56,15 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Option<Token> {
-        if self.position >= self.input.len() {
-            return None;
-        }
-
         let mut current = self.peek();
 
         while current.is_whitespace() {
             self.next();
             current = self.peek();
+        }
+
+        if self.position >= self.input.len() {
+            return None;
         }
 
         if current.is_numeric() {
@@ -125,7 +106,7 @@ impl Lexer {
         }
 
         let text: String = self.input[start_pos..self.position].iter().collect();
-        let ttype = *map::keyword_lookup(text.as_str()).unwrap_or(&TokenType::ID);
+        let ttype = *KEYWORDS_MAP.get(text.as_str()).unwrap_or(&TokenType::ID);
 
         Token {
             ttype,
@@ -146,7 +127,7 @@ impl Lexer {
                 .iter()
                 .collect();
 
-            if let Some(&ttype) = map::operation_lookup(two_chars.as_str()) {
+            if let Some(&ttype) = OPERATOPS_MAP.get(two_chars.as_str()) {
                 self.next();
                 self.next();
                 return Token {
@@ -159,8 +140,8 @@ impl Lexer {
             }
         }
 
-        let one_char: String = String::from(self.input[self.position]);
-        if let Some(&ttype) = map::operation_lookup(one_char.as_str()) {
+        let one_char: String = self.input[self.position].to_string();
+        if let Some(&ttype) = OPERATOPS_MAP.get(one_char.as_str()) {
             self.next();
             return Token {
                 ttype,

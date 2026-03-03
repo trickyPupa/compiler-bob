@@ -6,21 +6,34 @@ pub enum TokenType {
     VAR,
 
     PRINT,
-    IF, ELSE,
-    WHILE,      // while
+    IF,
+    ELSE,
+    WHILE, // while
 
     // Operators
-    PLUS, MINUS, STAR, SLASH,   // + - * /
-    EQ, EQEQ, EXCL, NEQ,        // = == ! !=
-    LT, GT, LTEQ, GTEQ,         // < > <= >=
-    AND, OR,                    // && ||
+    PLUS,  // +
+    MINUS, // -
+    STAR,  // *
+    SLASH, // /
+    EQ,    // =
+    EQEQ,  // ==
+    EXCL,  // !
+    NEQ,   // !=
+    LT,    // <
+    GT,    // >
+    LTEQ,  // <=
+    GTEQ,  // >=
+    AND,   // &&
+    OR,    // ||
 
     // Grouping & Punctuation
-    LPAREN, RPAREN, // ( )
-    LBRACE, RBRACE, // { }
-    SEMICOLON,      // ;
+    LPAREN,
+    RPAREN, // ( )
+    LBRACE,
+    RBRACE,    // { }
+    SEMICOLON, // ;
 
-    EOF
+    EOF,
 }
 
 #[derive(Debug)]
@@ -29,5 +42,5 @@ pub struct Token {
     pub value: String,
     pub position: usize,
     pub line: usize,
-    pub column: usize 
+    pub column: usize,
 }

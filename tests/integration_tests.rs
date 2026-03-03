@@ -16,7 +16,7 @@ fn lexer_types_test() {
         TokenType::ID,
         TokenType::PLUS,
         TokenType::NUMBER,
-        TokenType::SEMICOLON
+        TokenType::SEMICOLON,
     ];
 
     let lexer = Lexer::new(code_example);
