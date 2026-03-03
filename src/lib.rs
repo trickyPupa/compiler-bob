@@ -1,3 +1,6 @@
-pub mod code_generator;
+mod common;
+mod utils;
 pub mod lexer;
-pub mod token;
+
+pub use utils::code_generator;
+pub use common::token;
