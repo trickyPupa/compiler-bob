@@ -63,7 +63,16 @@ impl Lexer {
             current = self.peek();
         }
 
-        if self.position >= self.input.len() {
+        if self.position == self.input.len() {
+            return Some(Token {
+                    ttype: TokenType::EOF,
+                    value: "\0".to_string(),
+                    position: self.position,
+                    line: self.line,
+                    column: self.column,
+                });
+        } 
+        if self.position > self.input.len() {
             return None;
         }
 

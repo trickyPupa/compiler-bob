@@ -57,7 +57,7 @@ fn generate_block(used_vars: &mut HashSet<String>, indent_level: usize) -> Strin
                 block.push_str(&line);
             }
             2 => {
-                let line = format!("{indent}Print {}", generate_expression(used_vars));
+                let line = format!("{indent}print {}", generate_expression(used_vars));
                 block.push_str(&line);
             }
             3 => {
@@ -146,7 +146,7 @@ fn generate_condition(used_vars: &mut HashSet<String>) -> String {
 
 fn generate_var_declaration(used_vars: &mut HashSet<String>) -> String {
     format!(
-        "{} = {};",
+        "var {} = {};",
         generate_var(used_vars, None),
         generate_expression(used_vars)
     )
