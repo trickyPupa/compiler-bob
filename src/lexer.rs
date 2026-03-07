@@ -65,13 +65,13 @@ impl Lexer {
 
         if self.position == self.input.len() {
             return Some(Token {
-                    ttype: TokenType::EOF,
-                    value: "\0".to_string(),
-                    position: self.position,
-                    line: self.line,
-                    column: self.column,
-                });
-        } 
+                ttype: TokenType::EOF,
+                value: "\0".to_string(),
+                position: self.position,
+                line: self.line,
+                column: self.column,
+            });
+        }
         if self.position > self.input.len() {
             return None;
         }
