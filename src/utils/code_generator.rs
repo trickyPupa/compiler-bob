@@ -86,7 +86,7 @@ fn generate_block(used_vars: &mut HashSet<String>, indent_level: usize) -> Strin
     block
 }
 
-fn generate_line(used_vars: &mut HashSet<String>) -> String {
+fn _generate_line(used_vars: &mut HashSet<String>) -> String {
     let mut line = String::new();
 
     for _ in 0..fastrand::usize(2..5) {

@@ -1,6 +1,6 @@
 use super::expression::Expression;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Expression(Expression),
     Var(String, Option<Expression>),
