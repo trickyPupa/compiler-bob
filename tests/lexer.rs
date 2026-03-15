@@ -22,7 +22,6 @@ fn lexer_types_test() {
     let lexer = Lexer::new(code_example);
 
     for (i, token) in lexer.enumerate() {
-        // println!("{:?}", i);
         assert_eq!(required_types[i], token.ttype);
     }
 }
