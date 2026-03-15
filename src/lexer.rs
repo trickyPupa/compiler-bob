@@ -49,13 +49,16 @@ impl Lexer {
     pub fn new(inp: &str) -> Self {
         Self {
             input: inp.chars().collect(),
-            position: 1,
+            position: 0,
             line: 1,
             column: 1,
         }
     }
 
     fn next_token(&mut self) -> Option<Token> {
+        if self.position > self.input.len() { // todo refactor conditions
+            return None;
+        }
         let mut current = self.peek();
 
         while current.is_whitespace() {
@@ -64,6 +67,7 @@ impl Lexer {
         }
 
         if self.position == self.input.len() {
+            self.position += 1;
             return Some(Token {
                 ttype: TokenType::EOF,
                 value: "\0".to_string(),
@@ -99,7 +103,7 @@ impl Lexer {
         Token {
             ttype: TokenType::NUMBER,
             value: text,
-            position: start_pos,
+            position: start_pos + 1,
             line: start_line,
             column: start_col,
         }
@@ -120,7 +124,7 @@ impl Lexer {
         Token {
             ttype,
             value: text,
-            position: start_pos,
+            position: start_pos + 1,
             line: start_line,
             column: start_col,
         }
@@ -142,7 +146,7 @@ impl Lexer {
                 return Token {
                     ttype,
                     value: two_chars,
-                    position: start_pos,
+                    position: start_pos + 1,
                     line: start_line,
                     column: start_col,
                 };

@@ -27,10 +27,10 @@ pub enum TokenType {
     OR,    // ||
 
     // Grouping & Punctuation
-    LPAREN,
-    RPAREN, // ( )
-    LBRACE,
-    RBRACE,    // { }
+    LPAREN, // (
+    RPAREN, // )
+    LBRACE, // {
+    RBRACE, // }
     SEMICOLON, // ;
 
     EOF,

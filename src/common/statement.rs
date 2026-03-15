@@ -6,6 +6,6 @@ pub enum Statement {
     Var(String, Option<Expression>),
     Print(Expression),
     Block(Vec<Statement>),
-    If(Expression, Box<Statement>, Box<Statement>),
-    While(String, Box<Statement>),
+    If(Expression, Box<Statement>, Option<Box<Statement>>),
+    While(Expression, Box<Statement>),
 }
