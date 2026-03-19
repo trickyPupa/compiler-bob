@@ -56,7 +56,8 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Option<Token> {
-        if self.position > self.input.len() { // todo refactor conditions
+        if self.position > self.input.len() {
+            // todo refactor conditions
             return None;
         }
         let mut current = self.peek();
