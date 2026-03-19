@@ -23,7 +23,11 @@ fn parse_print_statement() {
 fn parse_complex_print_statement() {
     let mut parser = get_parser("print 1 + 2;");
 
-    let goal = Some(Statement::Print(Expression::Number(1.0f64)));
+    let goal = Some(Statement::Print(Expression::Binary(
+        Box::new(Expression::Number(1.0f64)),
+        TokenType::PLUS,
+        Box::new(Expression::Number(2.0f64)),
+    )));
 
     assert_eq!(parser.next(), goal);
 }
