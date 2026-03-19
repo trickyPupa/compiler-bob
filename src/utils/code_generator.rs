@@ -5,12 +5,12 @@ const MATH_OPERATORS: &[&str] = &["+", "-", "*", "/"];
 const COMPARE_OPERATORS: &[&str] = &["==", "!=", "<", ">", "<=", ">="];
 const LOGIC_OPERATORS: &[&str] = &["&&", "||"];
 
-pub fn generate_random_program() -> String {
+pub fn generate_random_program(blocks_count: usize) -> String {
     let mut result = String::new();
 
     let mut used_vars: HashSet<String> = HashSet::new();
 
-    for _ in 0..fastrand::usize(1..5) {
+    for _ in 0..fastrand::usize(1..blocks_count) {
         result.push_str(&generate_block(&mut used_vars, 0));
     }
     result.push('\n');

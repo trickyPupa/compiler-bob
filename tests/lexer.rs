@@ -7,7 +7,7 @@ fn lexer_types_test() {
     print x + 5;";
 
     let required_types = vec![
-        TokenType::ID,
+        TokenType::VAR,
         TokenType::ID,
         TokenType::EQ,
         TokenType::NUMBER,
@@ -17,6 +17,7 @@ fn lexer_types_test() {
         TokenType::PLUS,
         TokenType::NUMBER,
         TokenType::SEMICOLON,
+        TokenType::EOF,
     ];
 
     let lexer = Lexer::new(code_example);
