@@ -3,7 +3,9 @@ use compiler::parser::Parser;
 use compiler::{code_generator, token::Token};
 
 fn main() {
-    _lab2();
+    // _lab2();
+    let code_example = code_generator::generate_random_program(5);
+    println!("{}", code_example);
 }
 
 fn _lab1() {

@@ -1,6 +1,7 @@
 mod common;
 pub mod lexer;
 pub mod parser;
+pub mod semantic;
 mod utils;
 
 pub use common::expression;
