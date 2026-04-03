@@ -2,14 +2,54 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SymbolInfo {
-    name: String,
-    is_initialized: bool,
-    is_used: bool,
-}
+use super::symbol::SymbolInfo;
 
 pub type EnvRef = Rc<RefCell<Environment>>;
+
+pub trait EnvOps {
+    fn define_variable(&self, name: String, is_initialized: bool) -> bool;
+    fn is_variable_defined(&self, name: &str) -> bool;
+    fn is_variable_initialized(&self, name: &str) -> bool;
+    fn set_initialized(&self, name: &str) -> bool;
+    fn set_used(&self, name: &str) -> bool;
+    fn for_each_local_variable(&self, f: impl FnMut(&str, bool));
+    fn with_variable<R>(&self, name: &str, f: impl FnMut(&SymbolInfo) -> R) -> Option<R>;
+    fn with_variable_mut<R>(&self, name: &str, f: impl FnMut(&mut SymbolInfo) -> R) -> Option<R>;
+}
+
+impl EnvOps for EnvRef {
+    fn define_variable(&self, name: String, is_initialized: bool) -> bool {
+        Environment::define_variable(self, name, is_initialized)
+    }
+
+    fn is_variable_defined(&self, name: &str) -> bool {
+        Environment::is_variable_defined(self, name)
+    }
+
+    fn is_variable_initialized(&self, name: &str) -> bool {
+        Environment::is_variable_initialized(self, name)
+    }
+
+    fn set_initialized(&self, name: &str) -> bool {
+        Environment::set_initialized(self, name)
+    }
+
+    fn set_used(&self, name: &str) -> bool {
+        Environment::set_used(self, name)
+    }
+
+    fn for_each_local_variable(&self, f: impl FnMut(&str, bool)) {
+        Environment::for_each_local_variable(self, f)
+    }
+
+    fn with_variable<R>(&self, name: &str, f: impl FnMut(&SymbolInfo) -> R) -> Option<R> {
+        Environment::with_variable(self, name, f)
+    }
+
+    fn with_variable_mut<R>(&self, name: &str, f: impl FnMut(&mut SymbolInfo) -> R) -> Option<R> {
+        Environment::with_variable_mut(self, name, f)
+    }
+}
 
 pub struct Environment {
     parent: Option<Weak<RefCell<Environment>>>,

@@ -1,11 +1,11 @@
-use compiler::lexer::Lexer;
+use compiler::{lexer::Lexer, semantic::analyzer::Analyzer};
 use compiler::parser::Parser;
 use compiler::{code_generator, token::Token};
 
 fn main() {
-    // _lab2();
-    let code_example = code_generator::generate_random_program(5);
-    println!("{}", code_example);
+    _lab3();
+    // let code_example = code_generator::generate_random_program(5);
+    // println!("{}", code_example);
 }
 
 fn _lab1() {
@@ -38,5 +38,27 @@ if (x == 123) {
 
     for i in parser {
         println!("{:?}", i);
+    }
+}
+
+fn _lab3() {
+    // let code_example = code_generator::generate_random_program();
+    let code_example = "var y = 123;
+if (x == 123) {
+    print f + 5;
+    x = count + 1;
+}";
+    println!("code example:\n\n{}\n", code_example);
+
+    let lexer = Lexer::new(code_example);
+    let tokens: Vec<Token> = Vec::from_iter(lexer);
+
+    let parser = Parser::new(tokens.into_iter());
+
+    let mut semantic = Analyzer::new(parser);
+    semantic.analyze();
+
+    for i in semantic.errors() {
+        println!("{}", i);
     }
 }

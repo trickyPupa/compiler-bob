@@ -1,9 +1,6 @@
 use crate::expression::Expression;
-use crate::semantic::environment::{EnvRef, Environment};
-use crate::statement::{
-    BlockStatement, ExpressionStatement, IfStatement, PrintStatement, Statement, VarStatement,
-    WhileStatement,
-};
+use crate::semantic::environment::{EnvOps, EnvRef, Environment};
+use crate::statement::*;
 use std::rc::Rc;
 
 pub struct Analyzer<T: Iterator<Item = Statement>> {
@@ -56,7 +53,7 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         }
 
         let initialized = st.initializer.is_some();
-        if !Environment::define_variable(&self.env, st.name.clone(), initialized) {
+        if !self.env.define_variable(st.name.clone(), initialized) {
             self.errors.push(format!(
                 "[Line {}, Col {}] Variable '{}' is already defined in this scope",
                 st.line, st.column, st.name
@@ -113,7 +110,7 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
     }
 
     fn check_unused_variables(&mut self, line: usize, column: usize) {
-        Environment::for_each_local_variable(&self.env, |name, is_used| {
+        self.env.for_each_local_variable(|name, is_used| {
             if !is_used {
                 self.errors.push(format!(
                     "[Line {}, Col {}] [Semantic Warning] Variable '{}' declared, but has not used.",
@@ -124,10 +121,10 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
     }
 
     fn analyze_var_expression(&mut self, name: &str) {
-        if Environment::is_variable_defined(&self.env, name) {
-            Environment::set_used(&self.env, name);
+        if self.env.is_variable_defined(name) {
+            self.env.set_used(name);
 
-            if !Environment::is_variable_initialized(&self.env, name) {
+            if !self.env.is_variable_initialized(name) {
                 self.errors
                     .push(format!("Uninitialized variable used {name}."));
             }
@@ -140,8 +137,8 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
     fn analyze_assign_expression(&mut self, name: &str, value: &Expression) {
         self.analyze_expression(value);
 
-        if Environment::is_variable_defined(&self.env, name) {
-            Environment::set_initialized(&self.env, name);
+        if self.env.is_variable_defined(name) {
+            self.env.set_initialized(name);
         } else {
             self.errors
                 .push(format!("Cannot assign to undefined variable '{}'", name));
