@@ -2,7 +2,9 @@ use compiler::code_generator::generate_random_program;
 use compiler::expression::Expression;
 use compiler::lexer::Lexer;
 use compiler::parser::Parser;
-use compiler::statement::Statement;
+use compiler::statement::{
+    BlockStatement, ExpressionStatement, IfStatement, PrintStatement, Statement, VarStatement,
+};
 use compiler::token::TokenType;
 
 fn get_parser(src: &str) -> Parser<Lexer> {
@@ -14,7 +16,11 @@ fn get_parser(src: &str) -> Parser<Lexer> {
 fn parse_print_statement() {
     let mut parser = get_parser("print 1;");
 
-    let goal = Some(Statement::Print(Expression::Number(1.0f64)));
+    let goal = Some(Statement::Print(PrintStatement {
+        expression: Expression::Number(1.0f64),
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -23,11 +29,15 @@ fn parse_print_statement() {
 fn parse_complex_print_statement() {
     let mut parser = get_parser("print 1 + 2;");
 
-    let goal = Some(Statement::Print(Expression::Binary(
-        Box::new(Expression::Number(1.0f64)),
-        TokenType::PLUS,
-        Box::new(Expression::Number(2.0f64)),
-    )));
+    let goal = Some(Statement::Print(PrintStatement {
+        expression: Expression::Binary(
+            Box::new(Expression::Number(1.0f64)),
+            TokenType::PLUS,
+            Box::new(Expression::Number(2.0f64)),
+        ),
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -36,10 +46,12 @@ fn parse_complex_print_statement() {
 fn parse_var_statement() {
     let mut parser = get_parser("var x = 1;");
 
-    let goal = Some(Statement::Var(
-        String::from("x"),
-        Some(Expression::Number(1.0f64)),
-    ));
+    let goal = Some(Statement::Var(VarStatement {
+        name: String::from("x"),
+        initializer: Some(Expression::Number(1.0f64)),
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -48,10 +60,11 @@ fn parse_var_statement() {
 fn parse_assignment() {
     let mut parser = get_parser("x = 1;");
 
-    let goal = Some(Statement::Expression(Expression::Assign(
-        String::from("x"),
-        Box::new(Expression::Number(1f64)),
-    )));
+    let goal = Some(Statement::Expression(ExpressionStatement {
+        expression: Expression::Assign(String::from("x"), Box::new(Expression::Number(1f64))),
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -60,15 +73,22 @@ fn parse_assignment() {
 fn parse_simple_combo() {
     let mut parser = get_parser("var x = 2;x = 1;print x;");
 
-    let s1 = Some(Statement::Var(
-        String::from("x"),
-        Some(Expression::Number(2.0f64)),
-    ));
-    let s2 = Some(Statement::Expression(Expression::Assign(
-        String::from("x"),
-        Box::new(Expression::Number(1f64)),
-    )));
-    let s3 = Some(Statement::Print(Expression::Variable(String::from("x"))));
+    let s1 = Some(Statement::Var(VarStatement {
+        name: String::from("x"),
+        initializer: Some(Expression::Number(2.0f64)),
+        line: 0,
+        column: 0,
+    }));
+    let s2 = Some(Statement::Expression(ExpressionStatement {
+        expression: Expression::Assign(String::from("x"), Box::new(Expression::Number(1f64))),
+        line: 0,
+        column: 0,
+    }));
+    let s3 = Some(Statement::Print(PrintStatement {
+        expression: Expression::Variable(String::from("x")),
+        line: 0,
+        column: 0,
+    }));
 
     let mut goal = Vec::new();
     goal.push(s1);
@@ -84,11 +104,15 @@ fn parse_simple_combo() {
 fn parse_simple_expression_statement() {
     let mut parser = get_parser("1 < 4;");
 
-    let goal = Some(Statement::Expression(Expression::Binary(
-        Box::new(Expression::Number(1.0f64)),
-        TokenType::LT,
-        Box::new(Expression::Number(4.0f64)),
-    )));
+    let goal = Some(Statement::Expression(ExpressionStatement {
+        expression: Expression::Binary(
+            Box::new(Expression::Number(1.0f64)),
+            TokenType::LT,
+            Box::new(Expression::Number(4.0f64)),
+        ),
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -111,11 +135,11 @@ fn parse_complex_expression_statement() {
         TokenType::EQEQ,
         Box::new(Expression::Number(24f64)),
     );
-    let goal = Some(Statement::Expression(Expression::Binary(
-        Box::new(left),
-        TokenType::AND,
-        Box::new(right),
-    )));
+    let goal = Some(Statement::Expression(ExpressionStatement {
+        expression: Expression::Binary(Box::new(left), TokenType::AND, Box::new(right)),
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -125,10 +149,23 @@ fn parse_block_statement() {
     let source = "{print 1;var x = 2;}";
     let mut parser = get_parser(source);
 
-    let goal = Some(Statement::Block(vec![
-        Statement::Print(Expression::Number(1.0f64)),
-        Statement::Var(String::from("x"), Some(Expression::Number(2.0f64))),
-    ]));
+    let goal = Some(Statement::Block(BlockStatement {
+        statements: vec![
+            Statement::Print(PrintStatement {
+                expression: Expression::Number(1.0f64),
+                line: 0,
+                column: 0,
+            }),
+            Statement::Var(VarStatement {
+                name: String::from("x"),
+                initializer: Some(Expression::Number(2.0f64)),
+                line: 0,
+                column: 0,
+            }),
+        ],
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -138,17 +175,25 @@ fn parse_if_statement() {
     let source = "if (1 > 0) {print 1;}";
     let mut parser = get_parser(source);
 
-    let goal = Some(Statement::If(
-        Expression::Binary(
+    let goal = Some(Statement::If(IfStatement {
+        condition: Expression::Binary(
             Box::new(Expression::Number(1.0f64)),
             TokenType::GT,
             Box::new(Expression::Number(0.0f64)),
         ),
-        Box::new(Statement::Block(vec![Statement::Print(
-            Expression::Number(1.0f64),
-        )])),
-        None,
-    ));
+        then_branch: Box::new(Statement::Block(BlockStatement {
+            statements: vec![Statement::Print(PrintStatement {
+                expression: Expression::Number(1.0f64),
+                line: 0,
+                column: 0,
+            })],
+            line: 0,
+            column: 0,
+        })),
+        else_branch: None,
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }
@@ -158,20 +203,41 @@ fn parse_if_else_statement() {
     let source = "if (1 > 0) {print 1;} else {var x = 2;print x;}";
     let mut parser = get_parser(source);
 
-    let goal = Some(Statement::If(
-        Expression::Binary(
+    let goal = Some(Statement::If(IfStatement {
+        condition: Expression::Binary(
             Box::new(Expression::Number(1.0f64)),
             TokenType::GT,
             Box::new(Expression::Number(0.0f64)),
         ),
-        Box::new(Statement::Block(vec![Statement::Print(
-            Expression::Number(1.0f64),
-        )])),
-        Some(Box::new(Statement::Block(vec![
-            Statement::Var(String::from("x"), Some(Expression::Number(2.0f64))),
-            Statement::Print(Expression::Variable(String::from("x"))),
-        ]))),
-    ));
+        then_branch: Box::new(Statement::Block(BlockStatement {
+            statements: vec![Statement::Print(PrintStatement {
+                expression: Expression::Number(1.0f64),
+                line: 0,
+                column: 0,
+            })],
+            line: 0,
+            column: 0,
+        })),
+        else_branch: Some(Box::new(Statement::Block(BlockStatement {
+            statements: vec![
+                Statement::Var(VarStatement {
+                    name: String::from("x"),
+                    initializer: Some(Expression::Number(2.0f64)),
+                    line: 0,
+                    column: 0,
+                }),
+                Statement::Print(PrintStatement {
+                    expression: Expression::Variable(String::from("x")),
+                    line: 0,
+                    column: 0,
+                }),
+            ],
+            line: 0,
+            column: 0,
+        }))),
+        line: 0,
+        column: 0,
+    }));
 
     assert_eq!(parser.next(), goal);
 }

@@ -1,5 +1,8 @@
 use crate::expression::Expression;
-use crate::statement::Statement;
+use crate::statement::{
+    BlockStatement, ExpressionStatement, IfStatement, PrintStatement, Statement, VarStatement,
+    WhileStatement,
+};
 use crate::token::{Token, TokenType};
 
 pub struct Parser<T: Iterator<Item = Token>> {
@@ -268,6 +271,14 @@ impl<T: Iterator<Item = Token>> Parser<T> {
 
 // main block. parsing statements
 impl<T: Iterator<Item = Token>> Parser<T> {
+    fn current_line_col(&self) -> (usize, usize) {
+        let token = self
+            .current
+            .as_ref()
+            .expect("Current token is expected while parsing statement");
+        (token.line, token.column)
+    }
+
     fn next_statement(&mut self) -> Option<Statement> {
         self.advance();
 
@@ -288,14 +299,15 @@ impl<T: Iterator<Item = Token>> Parser<T> {
     }
 
     fn parse_declaration(&mut self) -> Option<Statement> {
+        let (line, column) = self.current_line_col();
         if self.check_type_advance(TokenType::VAR) {
-            self.parse_var_declaration()
+            self.parse_var_declaration(line, column)
         } else {
             None
         }
     }
 
-    fn parse_var_declaration(&mut self) -> Option<Statement> {
+    fn parse_var_declaration(&mut self, line: usize, column: usize) -> Option<Statement> {
         let name = self
             .peek_type_or_panic(TokenType::ID, "Variable name is required")
             .value;
@@ -310,37 +322,50 @@ impl<T: Iterator<Item = Token>> Parser<T> {
             TokenType::SEMICOLON,
             "\";\" is required after variable declaration",
         );
-        Some(Statement::Var(name, initializer))
+        Some(Statement::Var(VarStatement {
+            name,
+            initializer,
+            line,
+            column,
+        }))
     }
 
     fn parse_statement(&mut self) -> Option<Statement> {
         let ttype = self.current.as_ref().map(|token| token.ttype)?;
+        let (line, column) = self.current_line_col();
 
         match ttype {
             TokenType::IF => {
                 self.advance();
-                self.parse_if_statement()
+                self.parse_if_statement(line, column)
             }
             TokenType::PRINT => {
                 self.advance();
-                self.parse_print_statement()
+                self.parse_print_statement(line, column)
             }
             TokenType::WHILE => {
                 self.advance();
-                self.parse_while_statement()
+                self.parse_while_statement(line, column)
             }
-            TokenType::LBRACE => self.parse_block(),
+            TokenType::LBRACE => self.parse_block(line, column),
             _ => None,
         }
     }
 
     fn parse_expression_statement(&mut self) -> Option<Statement> {
+        let (line, column) = self.current_line_col();
         let expr = self.parse_expression();
         self.peek_type_or_panic(TokenType::SEMICOLON, "\";\" is required after expression.");
-        expr.map(Statement::Expression)
+        expr.map(|expression| {
+            Statement::Expression(ExpressionStatement {
+                expression,
+                line,
+                column,
+            })
+        })
     }
 
-    fn parse_if_statement(&mut self) -> Option<Statement> {
+    fn parse_if_statement(&mut self, line: usize, column: usize) -> Option<Statement> {
         self.peek_type_or_panic(TokenType::LPAREN, "\"(\" is required after \"if\".");
         self.advance();
 
@@ -362,14 +387,16 @@ impl<T: Iterator<Item = Token>> Parser<T> {
             None
         };
 
-        Some(Statement::If(
+        Some(Statement::If(IfStatement {
             condition,
-            Box::new(then_branch),
-            else_branch.map(Box::new),
-        ))
+            then_branch: Box::new(then_branch),
+            else_branch: else_branch.map(Box::new),
+            line,
+            column,
+        }))
     }
 
-    fn parse_while_statement(&mut self) -> Option<Statement> {
+    fn parse_while_statement(&mut self, line: usize, column: usize) -> Option<Statement> {
         self.peek_type_or_panic(TokenType::LPAREN, "\"(\" is required after \"while\".");
         self.advance();
 
@@ -387,10 +414,15 @@ impl<T: Iterator<Item = Token>> Parser<T> {
                 self.generate_panic_message("while block can't be empty")
             )
         });
-        Some(Statement::While(condition, Box::new(body)))
+        Some(Statement::While(WhileStatement {
+            condition,
+            body: Box::new(body),
+            line,
+            column,
+        }))
     }
 
-    fn parse_print_statement(&mut self) -> Option<Statement> {
+    fn parse_print_statement(&mut self, line: usize, column: usize) -> Option<Statement> {
         let value = self.parse_expression().unwrap_or_else(|| {
             panic!(
                 "{}",
@@ -399,10 +431,14 @@ impl<T: Iterator<Item = Token>> Parser<T> {
         });
         self.peek_type_or_panic(TokenType::SEMICOLON, "\";\" is required after value");
 
-        Some(Statement::Print(value))
+        Some(Statement::Print(PrintStatement {
+            expression: value,
+            line,
+            column,
+        }))
     }
 
-    fn parse_block(&mut self) -> Option<Statement> {
+    fn parse_block(&mut self, line: usize, column: usize) -> Option<Statement> {
         let mut statements: Vec<Statement> = Vec::new();
 
         while !self.is_at_end() && !self.advance_check_type(&[TokenType::RBRACE]) {
@@ -421,7 +457,11 @@ impl<T: Iterator<Item = Token>> Parser<T> {
             panic!("{}", self.generate_panic_message("block can't be empty"))
         }
 
-        Some(Statement::Block(statements))
+        Some(Statement::Block(BlockStatement {
+            statements,
+            line,
+            column,
+        }))
     }
 }
 
