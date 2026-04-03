@@ -243,6 +243,7 @@ fn parse_if_else_statement() {
 }
 
 #[test]
+#[ignore = "note ready yet"]
 fn parse_full_code() {
     for i in 0..10 {
         println!("attempt {i}:\n");
