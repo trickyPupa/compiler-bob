@@ -29,72 +29,31 @@ impl Environment {
         if env.variables.contains_key(&name) {
             return false;
         }
-        env.variables
-            .insert(name.clone(), SymbolInfo { name, is_initialized , is_used: false });
+        env.variables.insert(
+            name.clone(),
+            SymbolInfo {
+                name,
+                is_initialized,
+                is_used: false,
+            },
+        );
         true
     }
 
     pub fn is_variable_defined(env: &EnvRef, name: &str) -> bool {
-        let mut current = Some(Rc::clone(env));
-
-        while let Some(scope) = current {
-            let scope_ref = scope.borrow();
-            if scope_ref.variables.contains_key(name) {
-                return true;
-            }
-
-            current = scope_ref.parent.as_ref().and_then(Weak::upgrade);
-        }
-
-        false
+        Self::with_variable(env, name, |_| ()).is_some()
     }
 
     pub fn is_variable_initialized(env: &EnvRef, name: &str) -> bool {
-        let mut current = Some(Rc::clone(env));
-
-        while let Some(scope) = current {
-            let scope_ref = scope.borrow();
-
-            if let Some(info) = scope_ref.variables.get(name) {
-                return info.is_initialized;
-            }
-            
-            current = scope_ref.parent.as_ref().and_then(Weak::upgrade);
-        }
-
-        false
+        Self::with_variable(env, name, |s| s.is_initialized).unwrap_or(false)
     }
 
     pub fn set_initialized(env: &EnvRef, name: &str) -> bool {
-        let mut current = Some(Rc::clone(env));
-
-        while let Some(scope) = current {
-            let mut scope_ref = scope.borrow_mut();
-            if let Some(symbol) = scope_ref.variables.get_mut(name) {
-                symbol.is_initialized = true;
-                return true;
-            }
-
-            current = scope_ref.parent.as_ref().and_then(Weak::upgrade);
-        }
-
-        false
+        Self::with_variable_mut(env, name, |s| s.is_initialized = true).is_some()
     }
 
     pub fn set_used(env: &EnvRef, name: &str) -> bool {
-        let mut current = Some(Rc::clone(env));
-
-        while let Some(scope) = current {
-            let mut scope_ref = scope.borrow_mut();
-            if let Some(symbol) = scope_ref.variables.get_mut(name) {
-                symbol.is_used = true;
-                return true;
-            }
-
-            current = scope_ref.parent.as_ref().and_then(Weak::upgrade);
-        }
-
-        false
+        Self::with_variable_mut(env, name, |s| s.is_used = true).is_some()
     }
 
     pub fn for_each_local_variable(env: &EnvRef, mut f: impl FnMut(&str, bool)) {
@@ -102,5 +61,158 @@ impl Environment {
         for v in borrowed.variables.values() {
             f(&v.name, v.is_used);
         }
+    }
+
+    pub fn with_variable<R>(
+        env: &EnvRef,
+        name: &str,
+        mut f: impl FnMut(&SymbolInfo) -> R,
+    ) -> Option<R> {
+        let mut current = Some(Rc::clone(env));
+
+        while let Some(scope) = current {
+            let next = {
+                let borrowed = scope.borrow();
+
+                if let Some(sym) = borrowed.variables.get(name) {
+                    return Some(f(sym));
+                }
+
+                borrowed.parent.as_ref().and_then(Weak::upgrade)
+            };
+
+            current = next;
+        }
+
+        None
+    }
+
+    pub fn with_variable_mut<R>(
+        env: &EnvRef,
+        name: &str,
+        mut f: impl FnMut(&mut SymbolInfo) -> R,
+    ) -> Option<R> {
+        let mut current = Some(Rc::clone(env));
+
+        while let Some(scope) = current {
+            let next = {
+                let mut borrowed = scope.borrow_mut();
+
+                if let Some(sym) = borrowed.variables.get_mut(name) {
+                    return Some(f(sym));
+                }
+
+                borrowed.parent.as_ref().and_then(Weak::upgrade)
+            };
+
+            current = next;
+        }
+
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EnvRef, Environment};
+
+    fn child_of(parent: &EnvRef) -> EnvRef {
+        Environment::new(Some(parent))
+    }
+
+    #[test]
+    fn define_and_find_variable_in_current_scope() {
+        let env = Environment::new(None);
+
+        assert!(Environment::define_variable(&env, "x".to_string(), false));
+        assert!(Environment::is_variable_defined(&env, "x"));
+        assert!(!Environment::is_variable_initialized(&env, "x"));
+    }
+
+    #[test]
+    fn duplicate_variable_in_same_scope_is_rejected() {
+        let env = Environment::new(None);
+
+        assert!(Environment::define_variable(&env, "x".to_string(), true));
+        assert!(!Environment::define_variable(&env, "x".to_string(), false));
+    }
+
+    #[test]
+    fn child_scope_can_see_parent_variable() {
+        let parent = Environment::new(None);
+        assert!(Environment::define_variable(&parent, "x".to_string(), true));
+
+        let child = child_of(&parent);
+        assert!(Environment::is_variable_defined(&child, "x"));
+        assert!(Environment::is_variable_initialized(&child, "x"));
+    }
+
+    #[test]
+    fn set_initialized_updates_nearest_scope_entry() {
+        let parent = Environment::new(None);
+        assert!(Environment::define_variable(
+            &parent,
+            "x".to_string(),
+            false
+        ));
+
+        let child = child_of(&parent);
+        assert!(Environment::set_initialized(&child, "x"));
+        assert!(Environment::is_variable_initialized(&parent, "x"));
+    }
+
+    #[test]
+    fn set_used_marks_symbol_as_used() {
+        let env = Environment::new(None);
+        assert!(Environment::define_variable(&env, "x".to_string(), true));
+
+        assert!(Environment::set_used(&env, "x"));
+        let is_used = Environment::with_variable(&env, "x", |s| s.is_used).unwrap_or(false);
+        assert!(is_used);
+    }
+
+    #[test]
+    fn for_each_local_variable_iterates_only_local_scope() {
+        let parent = Environment::new(None);
+        assert!(Environment::define_variable(
+            &parent,
+            "parent_only".to_string(),
+            true
+        ));
+
+        let child = child_of(&parent);
+        assert!(Environment::define_variable(
+            &child,
+            "child_only".to_string(),
+            false
+        ));
+
+        let mut names = Vec::new();
+        Environment::for_each_local_variable(&child, |name, _| names.push(name.to_string()));
+
+        assert_eq!(names, vec!["child_only".to_string()]);
+    }
+
+    #[test]
+    fn with_variable_and_with_variable_mut_work_through_parent_chain() {
+        let parent = Environment::new(None);
+        assert!(Environment::define_variable(
+            &parent,
+            "x".to_string(),
+            false
+        ));
+        let child = child_of(&parent);
+
+        let was_initialized = Environment::with_variable(&child, "x", |s| s.is_initialized);
+        assert_eq!(was_initialized, Some(false));
+
+        let mark = Environment::with_variable_mut(&child, "x", |s| {
+            s.is_initialized = true;
+            s.is_used = true;
+        });
+        assert!(mark.is_some());
+
+        let state = Environment::with_variable(&parent, "x", |s| (s.is_initialized, s.is_used));
+        assert_eq!(state, Some((true, true)));
     }
 }
