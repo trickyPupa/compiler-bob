@@ -7,7 +7,16 @@ fn analyze_source(source: &str) -> Vec<String> {
     let parser = Parser::new(lexer);
     let mut analyzer = Analyzer::new(parser);
     analyzer.analyze();
-    analyzer.errors().to_vec()
+
+    let mut messages = analyzer.errors().to_vec();
+    messages.extend(
+        analyzer
+            .warnings()
+            .iter()
+            .map(|w| format!("[Semantic Warning] {w}")),
+    );
+
+    messages
 }
 
 #[test]

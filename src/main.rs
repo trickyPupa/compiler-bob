@@ -1,6 +1,6 @@
-use compiler::{lexer::Lexer, semantic::analyzer::Analyzer};
 use compiler::parser::Parser;
 use compiler::{code_generator, token::Token};
+use compiler::{lexer::Lexer, semantic::analyzer::Analyzer};
 
 fn main() {
     _lab3();

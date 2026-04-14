@@ -2,12 +2,14 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
+use crate::common::data_type::DataType;
+
 use super::symbol::SymbolInfo;
 
 pub type EnvRef = Rc<RefCell<Environment>>;
 
 pub trait EnvOps {
-    fn define_variable(&self, name: String, is_initialized: bool) -> bool;
+    fn define_variable(&self, name: String, is_initialized: bool, dtype: DataType) -> bool;
     fn is_variable_defined(&self, name: &str) -> bool;
     fn is_variable_initialized(&self, name: &str) -> bool;
     fn set_initialized(&self, name: &str) -> bool;
@@ -18,8 +20,8 @@ pub trait EnvOps {
 }
 
 impl EnvOps for EnvRef {
-    fn define_variable(&self, name: String, is_initialized: bool) -> bool {
-        Environment::define_variable(self, name, is_initialized)
+    fn define_variable(&self, name: String, is_initialized: bool, dtype: DataType) -> bool {
+        Environment::define_variable(self, name, is_initialized, dtype)
     }
 
     fn is_variable_defined(&self, name: &str) -> bool {
@@ -64,7 +66,12 @@ impl Environment {
         }))
     }
 
-    pub fn define_variable(env: &EnvRef, name: String, is_initialized: bool) -> bool {
+    pub fn define_variable(
+        env: &EnvRef,
+        name: String,
+        is_initialized: bool,
+        dtype: DataType,
+    ) -> bool {
         let mut env = env.borrow_mut();
         if env.variables.contains_key(&name) {
             return false;
@@ -75,6 +82,7 @@ impl Environment {
                 name,
                 is_initialized,
                 is_used: false,
+                dtype,
             },
         );
         true
@@ -154,7 +162,8 @@ impl Environment {
 
 #[cfg(test)]
 mod tests {
-    use super::{EnvRef, Environment};
+    use super::{EnvOps, EnvRef, Environment};
+    use crate::common::data_type::DataType;
 
     fn child_of(parent: &EnvRef) -> EnvRef {
         Environment::new(Some(parent))
@@ -164,71 +173,59 @@ mod tests {
     fn define_and_find_variable_in_current_scope() {
         let env = Environment::new(None);
 
-        assert!(Environment::define_variable(&env, "x".to_string(), false));
-        assert!(Environment::is_variable_defined(&env, "x"));
-        assert!(!Environment::is_variable_initialized(&env, "x"));
+        assert!(env.define_variable("x".to_string(), false, DataType::Numeric));
+        assert!(env.is_variable_defined("x"));
+        assert!(!env.is_variable_initialized("x"));
     }
 
     #[test]
     fn duplicate_variable_in_same_scope_is_rejected() {
         let env = Environment::new(None);
 
-        assert!(Environment::define_variable(&env, "x".to_string(), true));
-        assert!(!Environment::define_variable(&env, "x".to_string(), false));
+        assert!(env.define_variable("x".to_string(), true, DataType::Numeric));
+        assert!(!env.define_variable("x".to_string(), false, DataType::Boolean));
     }
 
     #[test]
     fn child_scope_can_see_parent_variable() {
         let parent = Environment::new(None);
-        assert!(Environment::define_variable(&parent, "x".to_string(), true));
+        assert!(parent.define_variable("x".to_string(), true, DataType::Numeric));
 
         let child = child_of(&parent);
-        assert!(Environment::is_variable_defined(&child, "x"));
-        assert!(Environment::is_variable_initialized(&child, "x"));
+        assert!(child.is_variable_defined("x"));
+        assert!(child.is_variable_initialized("x"));
     }
 
     #[test]
     fn set_initialized_updates_nearest_scope_entry() {
         let parent = Environment::new(None);
-        assert!(Environment::define_variable(
-            &parent,
-            "x".to_string(),
-            false
-        ));
+        assert!(parent.define_variable("x".to_string(), false, DataType::Numeric));
 
         let child = child_of(&parent);
-        assert!(Environment::set_initialized(&child, "x"));
-        assert!(Environment::is_variable_initialized(&parent, "x"));
+        assert!(child.set_initialized("x"));
+        assert!(parent.is_variable_initialized("x"));
     }
 
     #[test]
     fn set_used_marks_symbol_as_used() {
         let env = Environment::new(None);
-        assert!(Environment::define_variable(&env, "x".to_string(), true));
+        assert!(env.define_variable("x".to_string(), true, DataType::Numeric));
 
-        assert!(Environment::set_used(&env, "x"));
-        let is_used = Environment::with_variable(&env, "x", |s| s.is_used).unwrap_or(false);
+        assert!(env.set_used("x"));
+        let is_used = env.with_variable("x", |s| s.is_used).unwrap_or(false);
         assert!(is_used);
     }
 
     #[test]
     fn for_each_local_variable_iterates_only_local_scope() {
         let parent = Environment::new(None);
-        assert!(Environment::define_variable(
-            &parent,
-            "parent_only".to_string(),
-            true
-        ));
+        assert!(parent.define_variable("parent_only".to_string(), true, DataType::Numeric));
 
         let child = child_of(&parent);
-        assert!(Environment::define_variable(
-            &child,
-            "child_only".to_string(),
-            false
-        ));
+        assert!(child.define_variable("child_only".to_string(), false, DataType::Boolean));
 
         let mut names = Vec::new();
-        Environment::for_each_local_variable(&child, |name, _| names.push(name.to_string()));
+        child.for_each_local_variable(|name, _| names.push(name.to_string()));
 
         assert_eq!(names, vec!["child_only".to_string()]);
     }
@@ -236,23 +233,19 @@ mod tests {
     #[test]
     fn with_variable_and_with_variable_mut_work_through_parent_chain() {
         let parent = Environment::new(None);
-        assert!(Environment::define_variable(
-            &parent,
-            "x".to_string(),
-            false
-        ));
+        assert!(parent.define_variable("x".to_string(), false, DataType::Numeric));
         let child = child_of(&parent);
 
-        let was_initialized = Environment::with_variable(&child, "x", |s| s.is_initialized);
+        let was_initialized = child.with_variable("x", |s| s.is_initialized);
         assert_eq!(was_initialized, Some(false));
 
-        let mark = Environment::with_variable_mut(&child, "x", |s| {
+        let mark = child.with_variable_mut("x", |s| {
             s.is_initialized = true;
             s.is_used = true;
         });
         assert!(mark.is_some());
 
-        let state = Environment::with_variable(&parent, "x", |s| (s.is_initialized, s.is_used));
+        let state = parent.with_variable("x", |s| (s.is_initialized, s.is_used));
         assert_eq!(state, Some((true, true)));
     }
 }

@@ -1,11 +1,14 @@
+use crate::common::data_type::{DataType, NUMERIC_SUPPORTED_OPERATIONS};
 use crate::expression::Expression;
 use crate::semantic::environment::{EnvOps, EnvRef, Environment};
 use crate::statement::*;
+use crate::token::TokenType;
 use std::rc::Rc;
 
 pub struct Analyzer<T: Iterator<Item = Statement>> {
     env: EnvRef,
     errors: Vec<String>,
+    warnings: Vec<String>,
     statements: T,
 }
 
@@ -14,6 +17,7 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         Analyzer {
             env: Environment::new(None),
             errors: Vec::new(),
+            warnings: Vec::new(),
             statements: parser,
         }
     }
@@ -48,12 +52,16 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
     }
 
     fn analyze_var_statement(&mut self, st: &VarStatement) {
+        let mut dtype = DataType::Unknown;
         if let Some(expr) = &st.initializer {
-            self.analyze_expression(expr);
+            dtype = self.analyze_expression(expr);
         }
 
         let initialized = st.initializer.is_some();
-        if !self.env.define_variable(st.name.clone(), initialized) {
+        if !self
+            .env
+            .define_variable(st.name.clone(), initialized, dtype)
+        {
             self.errors.push(format!(
                 "[Line {}, Col {}] Variable '{}' is already defined in this scope",
                 st.line, st.column, st.name
@@ -96,15 +104,13 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         self.check_unused_variables(st.line, st.column);
     }
 
-    fn analyze_expression(&mut self, expr: &Expression) {
+    fn analyze_expression(&mut self, expr: &Expression) -> DataType {
         match expr {
-            Expression::Number(_) | Expression::String(_) => {}
+            Expression::Number(_) => DataType::Numeric,
+            Expression::String(_) => DataType::String,
             Expression::Variable(name) => self.analyze_var_expression(name),
-            Expression::Binary(left, _, right) => {
-                self.analyze_expression(left);
-                self.analyze_expression(right);
-            }
-            Expression::Unary(_, inner) => self.analyze_expression(inner),
+            Expression::Binary(left, tt, right) => self.analyze_binary_expression(left, tt, right),
+            Expression::Unary(_tt, inner) => self.analyze_expression(inner),
             Expression::Assign(name, value) => self.analyze_assign_expression(name, value),
         }
     }
@@ -112,30 +118,67 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
     fn check_unused_variables(&mut self, line: usize, column: usize) {
         self.env.for_each_local_variable(|name, is_used| {
             if !is_used {
-                self.errors.push(format!(
-                    "[Line {}, Col {}] [Semantic Warning] Variable '{}' declared, but has not used.",
+                self.warnings.push(format!(
+                    "[Line {}, Col {}] Variable '{}' declared, but has not used.",
                     line, column, name
                 ));
             }
         });
     }
 
-    fn analyze_var_expression(&mut self, name: &str) {
+    fn analyze_var_expression(&mut self, name: &str) -> DataType {
         if self.env.is_variable_defined(name) {
             self.env.set_used(name);
+
+            let dtype = self
+                .env
+                .with_variable(name, |s| s.dtype.clone())
+                .unwrap_or(DataType::Unknown);
 
             if !self.env.is_variable_initialized(name) {
                 self.errors
                     .push(format!("Uninitialized variable used {name}."));
             }
+
+            dtype
         } else {
             self.errors
                 .push(format!("Undeclared variable used {name}."));
+
+            DataType::Unknown
         }
     }
 
-    fn analyze_assign_expression(&mut self, name: &str, value: &Expression) {
-        self.analyze_expression(value);
+    fn analyze_binary_expression(
+        &mut self,
+        left: &Expression,
+        tt: &TokenType,
+        right: &Expression,
+    ) -> DataType {
+        let left = self.analyze_expression(left);
+        let right = self.analyze_expression(right);
+
+        let error_msg = format!(
+            "Unsupported operation for {:?} and {:?} data types",
+            left, right
+        );
+
+        if left == DataType::Unknown || right == DataType::Unknown {
+            DataType::Unknown
+        } else if left != right {
+            self.errors.push(error_msg);
+            DataType::Unknown
+        } else {
+            if left == DataType::Numeric && !NUMERIC_SUPPORTED_OPERATIONS.contains(tt) {
+                self.errors.push(error_msg);
+            }
+            // todo
+            left
+        }
+    }
+
+    fn analyze_assign_expression(&mut self, name: &str, value: &Expression) -> DataType {
+        let dtype = self.analyze_expression(value);
 
         if self.env.is_variable_defined(name) {
             self.env.set_initialized(name);
@@ -143,147 +186,15 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
             self.errors
                 .push(format!("Cannot assign to undefined variable '{}'", name));
         }
+
+        dtype
     }
 
     pub fn errors(&self) -> &[String] {
         &self.errors
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::Analyzer;
-    use crate::expression::Expression;
-    use crate::statement::{
-        BlockStatement, ExpressionStatement, PrintStatement, Statement, VarStatement,
-    };
-
-    fn var(name: &str, initializer: Option<Expression>, line: usize, column: usize) -> Statement {
-        Statement::Var(VarStatement {
-            name: name.to_string(),
-            initializer,
-            line,
-            column,
-        })
-    }
-
-    fn print(expression: Expression, line: usize, column: usize) -> Statement {
-        Statement::Print(PrintStatement {
-            expression,
-            line,
-            column,
-        })
-    }
-
-    fn expr(expression: Expression, line: usize, column: usize) -> Statement {
-        Statement::Expression(ExpressionStatement {
-            expression,
-            line,
-            column,
-        })
-    }
-
-    fn block(statements: Vec<Statement>, line: usize, column: usize) -> Statement {
-        Statement::Block(BlockStatement {
-            statements,
-            line,
-            column,
-        })
-    }
-
-    #[test]
-    fn reports_undeclared_variable_usage() {
-        let program = vec![print(Expression::Variable("x".to_string()), 1, 1)];
-        let mut analyzer = Analyzer::new(program.into_iter());
-
-        analyzer.analyze();
-
-        assert!(
-            analyzer
-                .errors()
-                .iter()
-                .any(|e| e.contains("Undeclared variable used x"))
-        );
-    }
-
-    #[test]
-    fn reports_uninitialized_variable_usage() {
-        let program = vec![
-            var("x", None, 1, 1),
-            print(Expression::Variable("x".to_string()), 2, 1),
-        ];
-        let mut analyzer = Analyzer::new(program.into_iter());
-
-        analyzer.analyze();
-
-        assert!(
-            analyzer
-                .errors()
-                .iter()
-                .any(|e| e.contains("Uninitialized variable used x"))
-        );
-    }
-
-    #[test]
-    fn reports_duplicate_variable_in_same_scope_with_position() {
-        let program = vec![
-            var("x", Some(Expression::Number(1.0)), 1, 1),
-            var("x", Some(Expression::Number(2.0)), 3, 7),
-        ];
-        let mut analyzer = Analyzer::new(program.into_iter());
-
-        analyzer.analyze();
-
-        assert!(analyzer.errors().iter().any(|e| {
-            e.contains("[Line 3, Col 7]") && e.contains("already defined in this scope")
-        }));
-    }
-
-    #[test]
-    fn reports_assignment_to_undefined_variable() {
-        let program = vec![expr(
-            Expression::Assign("x".to_string(), Box::new(Expression::Number(10.0))),
-            1,
-            1,
-        )];
-        let mut analyzer = Analyzer::new(program.into_iter());
-
-        analyzer.analyze();
-
-        assert!(
-            analyzer
-                .errors()
-                .iter()
-                .any(|e| e.contains("Cannot assign to undefined variable 'x'"))
-        );
-    }
-
-    #[test]
-    fn warns_about_unused_variable_in_block() {
-        let program = vec![block(
-            vec![var("x", Some(Expression::Number(1.0)), 2, 3)],
-            1,
-            1,
-        )];
-        let mut analyzer = Analyzer::new(program.into_iter());
-
-        analyzer.analyze();
-
-        assert!(analyzer.errors().iter().any(|e| {
-            e.contains("[Line 1, Col 1]") && e.contains("declared, but has not used")
-        }));
-    }
-
-    #[test]
-    fn no_errors_for_initialized_then_used_variable() {
-        let program = vec![
-            var("x", Some(Expression::Number(1.0)), 1, 1),
-            print(Expression::Variable("x".to_string()), 2, 1),
-        ];
-        let mut analyzer = Analyzer::new(program.into_iter());
-
-        analyzer.analyze();
-
-        assert!(analyzer.errors().is_empty());
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 }
