@@ -127,25 +127,22 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
     }
 
     fn analyze_var_expression(&mut self, name: &str) -> DataType {
-        if self.env.is_variable_defined(name) {
-            self.env.set_used(name);
-
-            let dtype = self
-                .env
-                .with_variable(name, |s| s.dtype.clone())
-                .unwrap_or(DataType::Unknown);
-
-            if !self.env.is_variable_initialized(name) {
-                self.errors
-                    .push(format!("Uninitialized variable used {name}."));
+        match self.env.with_variable_mut(name, |symbol| {
+            symbol.is_used = true;
+            (symbol.dtype, symbol.is_initialized)
+        }) {
+            Some((dtype, is_initialized)) => {
+                if !is_initialized {
+                    self.errors
+                        .push(format!("Uninitialized variable used {name}."));
+                }
+                dtype
             }
-
-            dtype
-        } else {
-            self.errors
-                .push(format!("Undeclared variable used {name}."));
-
-            DataType::Unknown
+            None => {
+                self.errors
+                    .push(format!("Undeclared variable used {name}."));
+                DataType::Unknown
+            }
         }
     }
 
@@ -180,9 +177,11 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
     fn analyze_assign_expression(&mut self, name: &str, value: &Expression) -> DataType {
         let dtype = self.analyze_expression(value);
 
-        if self.env.is_variable_defined(name) {
-            self.env.set_initialized(name);
-        } else {
+        if self
+            .env
+            .with_variable_mut(name, |symbol| symbol.is_initialized = true)
+            .is_none()
+        {
             self.errors
                 .push(format!("Cannot assign to undefined variable '{}'", name));
         }
