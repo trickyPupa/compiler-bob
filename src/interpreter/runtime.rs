@@ -1,0 +1,289 @@
+use std::collections::HashMap;
+
+use crate::{expression::Expression, statement};
+use crate::statement::Statement;
+use crate::token::TokenType;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RuntimeValue {
+    Number(f64),
+    Boolean(bool),
+    String(String),
+    Nil,
+}
+
+impl RuntimeValue {
+    fn is_truthy(&self) -> bool {
+        match self {
+            RuntimeValue::Boolean(value) => *value,
+            RuntimeValue::Number(value) => *value != 0.0,
+            RuntimeValue::String(value) => !value.is_empty(),
+            RuntimeValue::Nil => false,
+        }
+    }
+}
+
+impl std::fmt::Display for RuntimeValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeValue::Number(value) => write!(f, "{value}"),
+            RuntimeValue::Boolean(value) => write!(f, "{value}"),
+            RuntimeValue::String(value) => write!(f, "{value}"),
+            RuntimeValue::Nil => write!(f, "nil"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeError {
+    UndefinedVariable(String),
+    TypeError(String),
+    DivisionByZero,
+    UnsupportedOperator(TokenType),
+}
+
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeError::UndefinedVariable(name) => {
+                write!(f, "Variable '{name}' is not defined")
+            }
+            RuntimeError::TypeError(message) => write!(f, "Type error: {message}"),
+            RuntimeError::DivisionByZero => write!(f, "Division by zero"),
+            RuntimeError::UnsupportedOperator(operator) => {
+                write!(f, "Unsupported operator: {operator:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RuntimeError {}
+
+#[derive(Debug, Default)]
+pub struct RuntimeInterpreter<I: Iterator<Item=Statement>> {
+    values: HashMap<String, RuntimeValue>,
+    output: Vec<String>,
+    statements: I
+}
+
+impl<I: Iterator<Item=Statement>> RuntimeInterpreter<I> {
+    pub fn new(statements: I) -> Self {
+        Self {
+            values: HashMap::new(),
+            output: Vec::new(),
+            statements,
+        }
+    }
+
+    pub fn execute_program(&mut self) -> Result<(), RuntimeError>
+    {
+        while let Some(statement) = self.statements.next() {
+            self.execute_statement(&statement)?;
+        }
+        Ok(())
+    }
+
+    fn execute_statement(&mut self, statement: &Statement) -> Result<(), RuntimeError> {
+        match statement {
+            Statement::Expression(st) => {
+                self.evaluate_expression(&st.expression)?;
+                Ok(())
+            }
+            Statement::Var(st) => {
+                let value = match &st.initializer {
+                    Some(initializer) => self.evaluate_expression(initializer)?,
+                    None => RuntimeValue::Nil,
+                };
+                self.values.insert(st.name.clone(), value);
+                Ok(())
+            }
+            Statement::Print(st) => {
+                let value = self.evaluate_expression(&st.expression)?;
+                self.output.push(value.to_string());
+                Ok(())
+            }
+            Statement::Block(st) => {
+                for nested in &st.statements {
+                    self.execute_statement(nested)?;
+                }
+                Ok(())
+            }
+            Statement::If(st) => {
+                if self.evaluate_expression(&st.condition)?.is_truthy() {
+                    self.execute_statement(&st.then_branch)?;
+                } else if let Some(else_branch) = &st.else_branch {
+                    self.execute_statement(else_branch)?;
+                }
+                Ok(())
+            }
+            Statement::While(st) => {
+                while self.evaluate_expression(&st.condition)?.is_truthy() {
+                    self.execute_statement(&st.body)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn set_value(&mut self, name: &str, value: RuntimeValue) {
+        self.values.insert(name.to_string(), value);
+    }
+
+    pub fn get_value(&self, name: &str) -> Option<&RuntimeValue> {
+        self.values.get(name)
+    }
+
+    pub fn values(&self) -> &HashMap<String, RuntimeValue> {
+        &self.values
+    }
+
+    pub fn output(&self) -> &[String] {
+        &self.output
+    }
+
+    fn evaluate_expression(
+        &mut self,
+        expression: &Expression,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        match expression {
+            Expression::Number(value) => Ok(RuntimeValue::Number(*value)),
+            Expression::String(value) => Ok(RuntimeValue::String(value.clone())),
+            Expression::Variable(name) => self.get_value(name)
+                .cloned()
+                .ok_or_else(|| RuntimeError::UndefinedVariable(name.clone())),
+            Expression::Assign(name, value_expression) => {
+                let value = self.evaluate_expression(value_expression)?;
+                self.set_value(name, value.clone());
+                Ok(value)
+            }
+            Expression::Unary(operator, inner_expression) => {
+                let value = self.evaluate_expression(inner_expression)?;
+                self.evaluate_unary(*operator, value)
+            }
+            Expression::Binary(left_expression, operator, right_expression) => {
+                self.evaluate_binary(left_expression, *operator, right_expression)
+            }
+        }
+    }
+
+    fn evaluate_unary(
+        &self,
+        operator: TokenType,
+        value: RuntimeValue,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        match operator {
+            TokenType::MINUS => match value {
+                RuntimeValue::Number(number) => Ok(RuntimeValue::Number(-number)),
+                other => Err(RuntimeError::TypeError(format!(
+                    "Unary '-' expects number, got {other:?}"
+                ))),
+            },
+            TokenType::EXCL => Ok(RuntimeValue::Boolean(!value.is_truthy())),
+            _ => Err(RuntimeError::UnsupportedOperator(operator)),
+        }
+    }
+
+    fn evaluate_binary(
+        &mut self,
+        left_expression: &Expression,
+        operator: TokenType,
+        right_expression: &Expression,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        match operator {
+            TokenType::AND => {
+                let left = self.evaluate_expression(left_expression)?;
+                if !left.is_truthy() {
+                    return Ok(RuntimeValue::Boolean(false));
+                }
+                let right = self.evaluate_expression(right_expression)?;
+                Ok(RuntimeValue::Boolean(right.is_truthy()))
+            }
+            TokenType::OR => {
+                let left = self.evaluate_expression(left_expression)?;
+                if left.is_truthy() {
+                    return Ok(RuntimeValue::Boolean(true));
+                }
+                let right = self.evaluate_expression(right_expression)?;
+                Ok(RuntimeValue::Boolean(right.is_truthy()))
+            }
+            _ => {
+                let left = self.evaluate_expression(left_expression)?;
+                let right = self.evaluate_expression(right_expression)?;
+                self.evaluate_binary_values(left, operator, right)
+            }
+        }
+    }
+
+    fn evaluate_binary_values(
+        &self,
+        left: RuntimeValue,
+        operator: TokenType,
+        right: RuntimeValue,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        use RuntimeValue::{Boolean, Number, String};
+
+        match operator {
+            TokenType::PLUS => match (left, right) {
+                (Number(l), Number(r)) => Ok(Number(l + r)),
+                (String(l), String(r)) => Ok(String(format!("{l}{r}"))),
+                (l, r) => Err(RuntimeError::TypeError(format!(
+                    "'+' expects two numbers or two strings, got {l:?} and {r:?}"
+                ))),
+            },
+            TokenType::MINUS => self.numeric_operation(left, right, |l, r| Number(l - r), "-"),
+            TokenType::STAR => self.numeric_operation(left, right, |l, r| Number(l * r), "*"),
+            TokenType::SLASH => match (left, right) {
+                (Number(_), Number(0.0)) => Err(RuntimeError::DivisionByZero),
+                (Number(l), Number(r)) => Ok(Number(l / r)),
+                (l, r) => Err(RuntimeError::TypeError(format!(
+                    "'/' expects two numbers, got {l:?} and {r:?}"
+                ))),
+            },
+            TokenType::GT => self.numeric_compare(left, right, |l, r| l > r, ">"),
+            TokenType::GTEQ => self.numeric_compare(left, right, |l, r| l >= r, ">="),
+            TokenType::LT => self.numeric_compare(left, right, |l, r| l < r, "<"),
+            TokenType::LTEQ => self.numeric_compare(left, right, |l, r| l <= r, "<="),
+            TokenType::EQEQ => Ok(Boolean(left == right)),
+            TokenType::NEQ => Ok(Boolean(left != right)),
+            _ => Err(RuntimeError::UnsupportedOperator(operator)),
+        }
+    }
+
+    fn numeric_operation<F>(
+        &self,
+        left: RuntimeValue,
+        right: RuntimeValue,
+        operation: F,
+        operator_name: &str,
+    ) -> Result<RuntimeValue, RuntimeError>
+    where
+        F: FnOnce(f64, f64) -> RuntimeValue,
+    {
+        match (left, right) {
+            (RuntimeValue::Number(l), RuntimeValue::Number(r)) => Ok(operation(l, r)),
+            (l, r) => Err(RuntimeError::TypeError(format!(
+                "'{operator_name}' expects two numbers, got {l:?} and {r:?}"
+            ))),
+        }
+    }
+
+    fn numeric_compare<F>(
+        &self,
+        left: RuntimeValue,
+        right: RuntimeValue,
+        compare: F,
+        operator_name: &str,
+    ) -> Result<RuntimeValue, RuntimeError>
+    where
+        F: FnOnce(f64, f64) -> bool,
+    {
+        match (left, right) {
+            (RuntimeValue::Number(l), RuntimeValue::Number(r)) => {
+                Ok(RuntimeValue::Boolean(compare(l, r)))
+            }
+            (l, r) => Err(RuntimeError::TypeError(format!(
+                "'{operator_name}' expects two numbers, got {l:?} and {r:?}"
+            ))),
+        }
+    }
+}

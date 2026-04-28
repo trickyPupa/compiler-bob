@@ -1,9 +1,9 @@
-use crate::common::data_type::{DataType, NUMERIC_SUPPORTED_OPERATIONS};
+use crate::common::{data_type::{DataType, NUMERIC_SUPPORTED_OPERATIONS}, symbol::SymbolInfo};
 use crate::expression::Expression;
 use crate::semantic::environment::{EnvOps, EnvRef, Environment};
 use crate::statement::*;
 use crate::token::TokenType;
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
 pub struct Analyzer<T: Iterator<Item = Statement>> {
     env: EnvRef,
@@ -22,13 +22,15 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         }
     }
 
-    pub fn analyze(&mut self) {
+    pub fn analyze(&mut self) -> HashMap<String, SymbolInfo> {
         loop {
             let flag = self.analyze_next();
             if !flag {
                 break;
             }
         }
+
+        self.env.variables()
     }
 
     pub fn analyze_next(&mut self) -> bool {
@@ -195,5 +197,9 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
 
     pub fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+
+    pub fn sumbols_info(&self) -> HashMap<String, SymbolInfo> {
+        self.env.variables()
     }
 }

@@ -1,4 +1,4 @@
-use crate::common::data_type::DataType;
+use super::data_type::DataType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SymbolInfo {

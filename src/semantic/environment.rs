@@ -1,10 +1,9 @@
-use std::cell::RefCell;
+use std::{cell::RefCell};
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 use crate::common::data_type::DataType;
-
-use super::symbol::SymbolInfo;
+use crate::common::symbol::SymbolInfo;
 
 pub type EnvRef = Rc<RefCell<Environment>>;
 
@@ -17,6 +16,7 @@ pub trait EnvOps {
     fn for_each_local_variable(&self, f: impl FnMut(&str, bool));
     fn with_variable<R>(&self, name: &str, f: impl FnMut(&SymbolInfo) -> R) -> Option<R>;
     fn with_variable_mut<R>(&self, name: &str, f: impl FnMut(&mut SymbolInfo) -> R) -> Option<R>;
+    fn variables(&self) -> HashMap<String, SymbolInfo>;
 }
 
 impl EnvOps for EnvRef {
@@ -50,6 +50,10 @@ impl EnvOps for EnvRef {
 
     fn with_variable_mut<R>(&self, name: &str, f: impl FnMut(&mut SymbolInfo) -> R) -> Option<R> {
         Environment::with_variable_mut(self, name, f)
+    }
+
+    fn variables(&self) -> HashMap<String, SymbolInfo> {
+        self.borrow().variables.clone()
     }
 }
 
