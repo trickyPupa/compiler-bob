@@ -46,6 +46,22 @@ pub struct WhileStatement {
     pub column: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct FunctionStatement {
+    pub name: String,
+    pub params: Vec<String>,
+    pub body: BlockStatement,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ReturnStatement {
+    pub value: Option<Expression>,
+    pub line: usize,
+    pub column: usize,
+}
+
 impl PartialEq for ExpressionStatement {
     fn eq(&self, other: &Self) -> bool {
         self.expression == other.expression
@@ -84,6 +100,18 @@ impl PartialEq for WhileStatement {
     }
 }
 
+impl PartialEq for FunctionStatement {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.params == other.params && self.body == other.body
+    }
+}
+
+impl PartialEq for ReturnStatement {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Expression(ExpressionStatement),
@@ -92,4 +120,6 @@ pub enum Statement {
     Block(BlockStatement),
     If(IfStatement),
     While(WhileStatement),
+    Function(FunctionStatement),
+    Return(ReturnStatement),
 }

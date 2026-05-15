@@ -1,9 +1,11 @@
-use crate::common::{data_type::{DataType, NUMERIC_SUPPORTED_OPERATIONS}, symbol::SymbolInfo};
+use crate::common::data_type::{DataType, NUMERIC_SUPPORTED_OPERATIONS};
+use crate::common::symbol::SymbolInfo;
 use crate::expression::Expression;
 use crate::semantic::environment::{EnvOps, EnvRef, Environment};
 use crate::statement::*;
 use crate::token::TokenType;
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub struct Analyzer<T: Iterator<Item = Statement>> {
     env: EnvRef,
@@ -46,6 +48,8 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         match st {
             Statement::Expression(st) => self.analyze_expression_statement(st),
             Statement::Var(st) => self.analyze_var_statement(st),
+            Statement::Function(st) => self.analyze_function_statement(st),
+            Statement::Return(st) => self.analyze_return_statement(st),
             Statement::Print(st) => self.analyze_print_statement(st),
             Statement::Block(st) => self.analyze_block_statement(st),
             Statement::If(st) => self.analyze_if_statement(st),
@@ -106,11 +110,71 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         self.check_unused_variables(st.line, st.column);
     }
 
+    fn analyze_function_statement(&mut self, st: &crate::statement::FunctionStatement) {
+        // define function name in current env
+        if !self
+            .env
+            .define_variable(st.name.clone(), true, DataType::Unknown)
+        {
+            self.errors.push(format!(
+                "[Line {}, Col {}] Function '{}' is already defined in this scope",
+                st.line, st.column, st.name
+            ));
+            return;
+        }
+
+        // create new nested environment for parameters and body analysis
+        let prev_env = Rc::clone(&self.env);
+        self.env = Environment::new(Some(&prev_env));
+
+        for param in &st.params {
+            // parameters are initialized
+            if !self
+                .env
+                .define_variable(param.clone(), true, DataType::Unknown)
+            {
+                self.errors.push(format!(
+                    "[Line {}, Col {}] Parameter '{}' duplicate",
+                    st.line, st.column, param
+                ));
+            }
+        }
+
+        // analyze body
+        for nested in &st.body.statements {
+            self.analyze_statement(nested);
+        }
+
+        self.check_unused_variables(st.line, st.column);
+        self.env = prev_env;
+    }
+
+    fn analyze_return_statement(&mut self, st: &crate::statement::ReturnStatement) {
+        if let Some(expr) = &st.value {
+            self.analyze_expression(expr);
+        }
+    }
+
     fn analyze_expression(&mut self, expr: &Expression) -> DataType {
         match expr {
             Expression::Number(_) => DataType::Numeric,
             Expression::String(_) => DataType::String,
             Expression::Variable(name) => self.analyze_var_expression(name),
+            Expression::Call(name, args) => {
+                for a in args {
+                    self.analyze_expression(a);
+                }
+                // ensure function/variable exists and mark it as used
+                if self
+                    .env
+                    .with_variable_mut(name, |symbol| symbol.is_used = true)
+                    .is_none()
+                {
+                    self.errors
+                        .push(format!("Undeclared function '{}' used.", name));
+                }
+                DataType::Unknown
+            }
             Expression::Binary(left, tt, right) => self.analyze_binary_expression(left, tt, right),
             Expression::Unary(_tt, inner) => self.analyze_expression(inner),
             Expression::Assign(name, value) => self.analyze_assign_expression(name, value),

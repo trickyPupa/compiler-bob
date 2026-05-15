@@ -3,7 +3,8 @@ use compiler::expression::Expression;
 use compiler::lexer::Lexer;
 use compiler::parser::Parser;
 use compiler::statement::{
-    BlockStatement, ExpressionStatement, IfStatement, PrintStatement, Statement, VarStatement,
+    BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, PrintStatement,
+    ReturnStatement, Statement, VarStatement,
 };
 use compiler::token::TokenType;
 
@@ -235,6 +236,51 @@ fn parse_if_else_statement() {
             line: 0,
             column: 0,
         }))),
+        line: 0,
+        column: 0,
+    }));
+
+    assert_eq!(parser.next(), goal);
+}
+
+#[test]
+fn parse_function_declaration() {
+    let source = "fn add(a, b) { return a + b; }";
+    let mut parser = get_parser(source);
+
+    let goal = Some(Statement::Function(FunctionStatement {
+        name: String::from("add"),
+        params: vec![String::from("a"), String::from("b")],
+        body: BlockStatement {
+            statements: vec![Statement::Return(ReturnStatement {
+                value: Some(Expression::Binary(
+                    Box::new(Expression::Variable(String::from("a"))),
+                    TokenType::PLUS,
+                    Box::new(Expression::Variable(String::from("b"))),
+                )),
+                line: 0,
+                column: 0,
+            })],
+            line: 0,
+            column: 0,
+        },
+        line: 0,
+        column: 0,
+    }));
+
+    assert_eq!(parser.next(), goal);
+}
+
+#[test]
+fn parse_function_call_expression_statement() {
+    let source = "add(1, 2);";
+    let mut parser = get_parser(source);
+
+    let goal = Some(Statement::Expression(ExpressionStatement {
+        expression: Expression::Call(
+            String::from("add"),
+            vec![Expression::Number(1.0), Expression::Number(2.0)],
+        ),
         line: 0,
         column: 0,
     }));

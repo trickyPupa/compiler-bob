@@ -24,6 +24,7 @@ static OPERATOPS_MAP: LazyLock<HashMap<&'static str, TokenType>> = LazyLock::new
         ("{", TokenType::LBRACE),
         ("}", TokenType::RBRACE),
         (";", TokenType::SEMICOLON),
+        (",", TokenType::COMMA),
     ])
 });
 
@@ -31,6 +32,8 @@ static KEYWORDS_MAP: LazyLock<HashMap<&'static str, TokenType>> = LazyLock::new(
     HashMap::from([
         ("var", TokenType::VAR),
         ("print", TokenType::PRINT),
+        ("fn", TokenType::FN),
+        ("return", TokenType::RETURN),
         ("if", TokenType::IF),
         ("else", TokenType::ELSE),
         ("while", TokenType::WHILE),

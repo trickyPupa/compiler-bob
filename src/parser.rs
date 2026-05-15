@@ -8,16 +8,32 @@ use crate::token::{Token, TokenType};
 pub struct Parser<T: Iterator<Item = Token>> {
     tokens: T,
     current: Option<Token>,
+    next: Option<Token>,
     debug_flag: bool,
 }
 
 // utils functions
 impl<T: Iterator<Item = Token>> Parser<T> {
     fn advance(&mut self) {
-        self.current = self.tokens.next();
+        if self.next.is_some() {
+            self.current = self.next.take();
+        } else {
+            self.current = self.tokens.next();
+        }
         if self.debug_flag {
             println!("debug: token {:?}", self.current);
         }
+    }
+
+    fn peek_next(&mut self) -> Option<&Token> {
+        if self.next.is_none() {
+            self.next = self.tokens.next();
+        }
+        self.next.as_ref()
+    }
+
+    fn peek_next_is(&mut self, ttype: TokenType) -> bool {
+        self.peek_next().map_or(false, |token| token.ttype == ttype)
     }
 
     fn is_at_end(&self) -> bool {
@@ -252,7 +268,37 @@ impl<T: Iterator<Item = Token>> Parser<T> {
                     });
                     Some(Expression::Number(double))
                 }
-                TokenType::ID => Some(Expression::Variable(token.value.clone())),
+                // TokenType::ID => Some(Expression::Variable(token.value.clone())),
+                TokenType::ID => {
+                    let name = token.value.clone();
+                    if self.peek_next_is(TokenType::LPAREN) {
+                        // consume '(' and advance to first token inside args
+                        self.advance();
+                        self.advance();
+
+                        let mut args: Vec<Expression> = Vec::new();
+                        if !self.check_type(&[TokenType::RPAREN]) {
+                            loop {
+                                let expr = self
+                                    .parse_expression()
+                                    .expect("Argument expression expected");
+                                args.push(expr);
+                                if self.check_type_advance(TokenType::COMMA) {
+                                    continue;
+                                }
+                                break;
+                            }
+                        }
+
+                        self.peek_type_or_panic(
+                            TokenType::RPAREN,
+                            "')' is required after call arguments",
+                        );
+                        // leave current at RPAREN; do not consume it here
+                        return Some(Expression::Call(name, args));
+                    }
+                    Some(Expression::Variable(name))
+                }
                 TokenType::LPAREN => {
                     self.advance();
                     let expr = self.parse_expression();
@@ -302,6 +348,8 @@ impl<T: Iterator<Item = Token>> Parser<T> {
         let (line, column) = self.current_line_col();
         if self.check_type_advance(TokenType::VAR) {
             self.parse_var_declaration(line, column)
+        } else if self.check_type_advance(TokenType::FN) {
+            self.parse_function_declaration(line, column)
         } else {
             None
         }
@@ -335,6 +383,10 @@ impl<T: Iterator<Item = Token>> Parser<T> {
         let (line, column) = self.current_line_col();
 
         match ttype {
+            TokenType::RETURN => {
+                self.advance();
+                self.parse_return_statement(line, column)
+            }
             TokenType::IF => {
                 self.advance();
                 self.parse_if_statement(line, column)
@@ -349,6 +401,74 @@ impl<T: Iterator<Item = Token>> Parser<T> {
             }
             TokenType::LBRACE => self.parse_block(line, column),
             _ => None,
+        }
+    }
+
+    fn parse_function_declaration(&mut self, line: usize, column: usize) -> Option<Statement> {
+        let name = self
+            .peek_type_or_panic(TokenType::ID, "Function name is required")
+            .value;
+        self.advance();
+
+        self.peek_type_or_panic(TokenType::LPAREN, "'(' is required after function name");
+        self.advance();
+
+        let mut params: Vec<String> = Vec::new();
+        if !self.check_type(&[TokenType::RPAREN]) {
+            loop {
+                let param = self
+                    .peek_type_or_panic(TokenType::ID, "Parameter name is required")
+                    .value;
+                self.advance();
+                params.push(param);
+                if self.check_type_advance(TokenType::COMMA) {
+                    continue;
+                }
+                break;
+            }
+        }
+
+        self.peek_type_or_panic(TokenType::RPAREN, "')' is required after parameters");
+        // advance to the token after RPAREN (likely LBRACE)
+        self.advance();
+
+        // now parse function body as a block
+        let body = match self.parse_block(line, column) {
+            Some(Statement::Block(b)) => b,
+            _ => panic!(
+                "{}",
+                self.generate_panic_message("function body is required")
+            ),
+        };
+
+        Some(Statement::Function(crate::statement::FunctionStatement {
+            name,
+            params,
+            body,
+            line,
+            column,
+        }))
+    }
+
+    fn parse_return_statement(&mut self, line: usize, column: usize) -> Option<Statement> {
+        // if next token is semicolon, it's a bare return
+        if self.check_type(&[TokenType::SEMICOLON]) {
+            self.peek_type_or_panic(TokenType::SEMICOLON, "; is required after return");
+            Some(Statement::Return(crate::statement::ReturnStatement {
+                value: None,
+                line,
+                column,
+            }))
+        } else {
+            let expr = self.parse_expression();
+            self.peek_type_or_panic(TokenType::SEMICOLON, "; is required after return value");
+            expr.map(|e| {
+                Statement::Return(crate::statement::ReturnStatement {
+                    value: Some(e),
+                    line,
+                    column,
+                })
+            })
         }
     }
 
@@ -471,6 +591,7 @@ impl<T: Iterator<Item = Token>> Parser<T> {
         Parser {
             tokens: lexer,
             current: None,
+            next: None,
             debug_flag: false,
         }
     }
@@ -479,6 +600,7 @@ impl<T: Iterator<Item = Token>> Parser<T> {
         Parser {
             tokens: lexer,
             current: None,
+            next: None,
             debug_flag: true,
         }
     }

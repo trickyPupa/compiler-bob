@@ -1,7 +1,8 @@
 use compiler::expression::Expression;
 use compiler::interpreter::{RuntimeInterpreter, RuntimeValue};
 use compiler::statement::{
-    ExpressionStatement, IfStatement, PrintStatement, Statement, VarStatement, WhileStatement,
+    BlockStatement, ExpressionStatement, FunctionStatement, IfStatement, PrintStatement,
+    ReturnStatement, Statement, VarStatement, WhileStatement,
 };
 use compiler::token::TokenType;
 
@@ -46,9 +47,7 @@ fn executes_statements_sequentially() {
     ];
 
     let mut runtime = RuntimeInterpreter::new(program.into_iter());
-    runtime
-        .execute_program()
-        .expect("program should run");
+    runtime.execute_program().expect("program should run");
 
     assert_eq!(runtime.get_value("x"), Some(&RuntimeValue::Number(3.0)));
     assert_eq!(runtime.output(), ["3"]);
@@ -92,9 +91,7 @@ fn executes_if_else_and_while() {
     ];
 
     let mut runtime = RuntimeInterpreter::new(program.into_iter());
-    runtime
-        .execute_program()
-        .expect("program should run");
+    runtime.execute_program().expect("program should run");
 
     assert_eq!(
         runtime.get_value("counter"),
@@ -105,8 +102,45 @@ fn executes_if_else_and_while() {
 
 #[test]
 fn errors_on_unknown_variable() {
-    let mut runtime = RuntimeInterpreter::new(vec![print(Expression::Variable("x".to_string()))].into_iter());
+    let mut runtime =
+        RuntimeInterpreter::new(vec![print(Expression::Variable("x".to_string()))].into_iter());
     let result = runtime.execute_program();
 
     assert!(result.is_err());
+}
+
+#[test]
+fn executes_function_call_and_return() {
+    let function = Statement::Function(FunctionStatement {
+        name: "add".to_string(),
+        params: vec!["a".to_string(), "b".to_string()],
+        body: BlockStatement {
+            statements: vec![Statement::Return(ReturnStatement {
+                value: Some(Expression::Binary(
+                    Box::new(Expression::Variable("a".to_string())),
+                    TokenType::PLUS,
+                    Box::new(Expression::Variable("b".to_string())),
+                )),
+                line: 1,
+                column: 1,
+            })],
+            line: 1,
+            column: 1,
+        },
+        line: 1,
+        column: 1,
+    });
+
+    let program = vec![
+        function,
+        print(Expression::Call(
+            "add".to_string(),
+            vec![Expression::Number(1.0), Expression::Number(2.0)],
+        )),
+    ];
+
+    let mut runtime = RuntimeInterpreter::new(program.into_iter());
+    runtime.execute_program().expect("program should run");
+
+    assert_eq!(runtime.output(), ["3"]);
 }

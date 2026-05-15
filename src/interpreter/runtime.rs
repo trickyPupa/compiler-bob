@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{expression::Expression, statement};
+use crate::expression::Expression;
 use crate::statement::Statement;
 use crate::token::TokenType;
 
@@ -9,6 +9,10 @@ pub enum RuntimeValue {
     Number(f64),
     Boolean(bool),
     String(String),
+    Function {
+        params: Vec<String>,
+        body: crate::statement::BlockStatement,
+    },
     Nil,
 }
 
@@ -19,6 +23,7 @@ impl RuntimeValue {
             RuntimeValue::Number(value) => *value != 0.0,
             RuntimeValue::String(value) => !value.is_empty(),
             RuntimeValue::Nil => false,
+            RuntimeValue::Function { params, body } => todo!(),
         }
     }
 }
@@ -30,16 +35,18 @@ impl std::fmt::Display for RuntimeValue {
             RuntimeValue::Boolean(value) => write!(f, "{value}"),
             RuntimeValue::String(value) => write!(f, "{value}"),
             RuntimeValue::Nil => write!(f, "nil"),
+            RuntimeValue::Function { params, body } => todo!(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum RuntimeError {
     UndefinedVariable(String),
     TypeError(String),
     DivisionByZero,
     UnsupportedOperator(TokenType),
+    Return(RuntimeValue),
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -53,6 +60,7 @@ impl std::fmt::Display for RuntimeError {
             RuntimeError::UnsupportedOperator(operator) => {
                 write!(f, "Unsupported operator: {operator:?}")
             }
+            RuntimeError::Return(runtime_value) => todo!(),
         }
     }
 }
@@ -60,23 +68,22 @@ impl std::fmt::Display for RuntimeError {
 impl std::error::Error for RuntimeError {}
 
 #[derive(Debug, Default)]
-pub struct RuntimeInterpreter<I: Iterator<Item=Statement>> {
-    values: HashMap<String, RuntimeValue>,
+pub struct RuntimeInterpreter<I: Iterator<Item = Statement>> {
+    scopes: Vec<HashMap<String, RuntimeValue>>,
     output: Vec<String>,
-    statements: I
+    statements: I,
 }
 
-impl<I: Iterator<Item=Statement>> RuntimeInterpreter<I> {
+impl<I: Iterator<Item = Statement>> RuntimeInterpreter<I> {
     pub fn new(statements: I) -> Self {
         Self {
-            values: HashMap::new(),
+            scopes: vec![HashMap::new()],
             output: Vec::new(),
             statements,
         }
     }
 
-    pub fn execute_program(&mut self) -> Result<(), RuntimeError>
-    {
+    pub fn execute_program(&mut self) -> Result<(), RuntimeError> {
         while let Some(statement) = self.statements.next() {
             self.execute_statement(&statement)?;
         }
@@ -94,7 +101,7 @@ impl<I: Iterator<Item=Statement>> RuntimeInterpreter<I> {
                     Some(initializer) => self.evaluate_expression(initializer)?,
                     None => RuntimeValue::Nil,
                 };
-                self.values.insert(st.name.clone(), value);
+                self.define_value(st.name.clone(), value);
                 Ok(())
             }
             Statement::Print(st) => {
@@ -102,12 +109,24 @@ impl<I: Iterator<Item=Statement>> RuntimeInterpreter<I> {
                 self.output.push(value.to_string());
                 Ok(())
             }
-            Statement::Block(st) => {
-                for nested in &st.statements {
-                    self.execute_statement(nested)?;
-                }
+            Statement::Function(st) => {
+                self.define_value(
+                    st.name.clone(),
+                    RuntimeValue::Function {
+                        params: st.params.clone(),
+                        body: st.body.clone(),
+                    },
+                );
                 Ok(())
             }
+            Statement::Return(st) => {
+                let value = match &st.value {
+                    Some(expr) => self.evaluate_expression(expr)?,
+                    None => RuntimeValue::Nil,
+                };
+                Err(RuntimeError::Return(value))
+            }
+            Statement::Block(st) => self.execute_block(&st.statements),
             Statement::If(st) => {
                 if self.evaluate_expression(&st.condition)?.is_truthy() {
                     self.execute_statement(&st.then_branch)?;
@@ -126,15 +145,19 @@ impl<I: Iterator<Item=Statement>> RuntimeInterpreter<I> {
     }
 
     fn set_value(&mut self, name: &str, value: RuntimeValue) {
-        self.values.insert(name.to_string(), value);
+        if self.assign_value(name, value.clone()).is_err() {
+            self.define_value(name.to_string(), value);
+        }
     }
 
     pub fn get_value(&self, name: &str) -> Option<&RuntimeValue> {
-        self.values.get(name)
+        self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
     pub fn values(&self) -> &HashMap<String, RuntimeValue> {
-        &self.values
+        self.scopes
+            .first()
+            .expect("RuntimeInterpreter must have a global scope")
     }
 
     pub fn output(&self) -> &[String] {
@@ -148,13 +171,55 @@ impl<I: Iterator<Item=Statement>> RuntimeInterpreter<I> {
         match expression {
             Expression::Number(value) => Ok(RuntimeValue::Number(*value)),
             Expression::String(value) => Ok(RuntimeValue::String(value.clone())),
-            Expression::Variable(name) => self.get_value(name)
+            Expression::Variable(name) => self
+                .get_value(name)
                 .cloned()
                 .ok_or_else(|| RuntimeError::UndefinedVariable(name.clone())),
             Expression::Assign(name, value_expression) => {
                 let value = self.evaluate_expression(value_expression)?;
-                self.set_value(name, value.clone());
+                self.assign_value(name, value.clone())?;
                 Ok(value)
+            }
+            Expression::Call(name, args) => {
+                let mut arg_values: Vec<RuntimeValue> = Vec::new();
+                for a in args {
+                    arg_values.push(self.evaluate_expression(a)?);
+                }
+
+                let func_opt = self.get_value(name).cloned();
+                match func_opt {
+                    Some(RuntimeValue::Function { params, body }) => {
+                        if params.len() != arg_values.len() {
+                            return Err(RuntimeError::TypeError(format!(
+                                "Function '{}' expects {} args, got {}",
+                                name,
+                                params.len(),
+                                arg_values.len()
+                            )));
+                        }
+
+                        self.push_scope();
+
+                        for (p, v) in params.iter().zip(arg_values.into_iter()) {
+                            self.define_value(p.clone(), v);
+                        }
+
+                        let result = self.execute_block(&body.statements);
+                        let ret_val = match result {
+                            Ok(_) => Ok(RuntimeValue::Nil),
+                            Err(RuntimeError::Return(val)) => Ok(val),
+                            Err(e) => Err(e),
+                        };
+
+                        self.pop_scope();
+                        ret_val
+                    }
+                    Some(_) => Err(RuntimeError::TypeError(format!(
+                        "'{}' is not a function",
+                        name
+                    ))),
+                    None => Err(RuntimeError::UndefinedVariable(name.clone())),
+                }
             }
             Expression::Unary(operator, inner_expression) => {
                 let value = self.evaluate_expression(inner_expression)?;
@@ -285,5 +350,48 @@ impl<I: Iterator<Item=Statement>> RuntimeInterpreter<I> {
                 "'{operator_name}' expects two numbers, got {l:?} and {r:?}"
             ))),
         }
+    }
+
+    fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    fn pop_scope(&mut self) {
+        if self.scopes.len() > 1 {
+            self.scopes.pop();
+        }
+    }
+
+    fn define_value(&mut self, name: String, value: RuntimeValue) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name, value);
+        }
+    }
+
+    fn assign_value(&mut self, name: &str, value: RuntimeValue) -> Result<(), RuntimeError> {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(name) {
+                scope.insert(name.to_string(), value);
+                return Ok(());
+            }
+        }
+        Err(RuntimeError::UndefinedVariable(name.to_string()))
+    }
+
+    fn execute_block(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {
+        self.push_scope();
+
+        for nested in statements {
+            match self.execute_statement(nested) {
+                Ok(_) => {}
+                Err(e) => {
+                    self.pop_scope();
+                    return Err(e);
+                }
+            }
+        }
+
+        self.pop_scope();
+        Ok(())
     }
 }

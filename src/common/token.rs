@@ -32,6 +32,10 @@ pub enum TokenType {
     LBRACE,    // {
     RBRACE,    // }
     SEMICOLON, // ;
+    COMMA,     // ,
+
+    FN,
+    RETURN,
 
     EOF,
 }

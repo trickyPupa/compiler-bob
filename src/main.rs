@@ -3,7 +3,7 @@ use compiler::{code_generator, token::Token};
 use compiler::{lexer::Lexer, semantic::analyzer::Analyzer};
 
 fn main() {
-    _interpreter();
+    _functions();
     // let code_example = code_generator::generate_random_program(5);
     // println!("{}", code_example);
 }
@@ -84,6 +84,29 @@ print y;";
 
     let mut runtime = RuntimeInterpreter::new(parser);
     let _ = runtime.execute_program();
+
+    for i in runtime.output() {
+        println!("{i}");
+    }
+}
+
+fn _functions() {
+    let code_example = "var x = 1;
+fn abc(a, b) {
+    return a + b;
+}
+print abc(x, 2);";
+
+    let lexer = Lexer::new(code_example);
+    let tokens: Vec<Token> = Vec::from_iter(lexer);
+
+    let parser = Parser::new(tokens.into_iter());
+
+    let mut runtime = RuntimeInterpreter::new(parser);
+    if let Err(err) = runtime.execute_program() {
+        eprintln!("Runtime error: {err}");
+        return;
+    }
 
     for i in runtime.output() {
         println!("{i}");

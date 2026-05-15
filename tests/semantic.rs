@@ -79,3 +79,18 @@ fn allows_access_to_parent_scope_variable() {
 
     assert!(errors.is_empty(), "unexpected errors: {errors:?}");
 }
+
+#[test]
+fn allows_function_declaration_and_call() {
+    let source = "fn add(a, b) { return a + b; } print add(1, 2);";
+    let errors = analyze_source(source);
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+}
+
+#[test]
+fn reports_undeclared_function_call() {
+    let errors = analyze_source("print add(1, 2);");
+
+    assert!(errors.iter().any(|e| e.contains("Undeclared function 'add'")));
+}

@@ -8,4 +8,5 @@ pub enum Expression {
     Binary(Box<Expression>, TokenType, Box<Expression>),
     Unary(TokenType, Box<Expression>),
     Assign(String, Box<Expression>),
+    Call(String, Vec<Expression>),
 }
