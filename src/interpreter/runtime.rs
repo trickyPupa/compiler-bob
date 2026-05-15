@@ -23,7 +23,7 @@ impl RuntimeValue {
             RuntimeValue::Number(value) => *value != 0.0,
             RuntimeValue::String(value) => !value.is_empty(),
             RuntimeValue::Nil => false,
-            RuntimeValue::Function { params, body } => todo!(),
+            RuntimeValue::Function { .. } => true,
         }
     }
 }
@@ -35,7 +35,9 @@ impl std::fmt::Display for RuntimeValue {
             RuntimeValue::Boolean(value) => write!(f, "{value}"),
             RuntimeValue::String(value) => write!(f, "{value}"),
             RuntimeValue::Nil => write!(f, "nil"),
-            RuntimeValue::Function { params, body } => todo!(),
+            RuntimeValue::Function { params, .. } => {
+                write!(f, "<fn/{}>", params.len())
+            }
         }
     }
 }
@@ -60,7 +62,9 @@ impl std::fmt::Display for RuntimeError {
             RuntimeError::UnsupportedOperator(operator) => {
                 write!(f, "Unsupported operator: {operator:?}")
             }
-            RuntimeError::Return(runtime_value) => todo!(),
+            RuntimeError::Return(runtime_value) => {
+                write!(f, "Return({runtime_value})")
+            }
         }
     }
 }
