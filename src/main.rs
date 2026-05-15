@@ -1,9 +1,10 @@
-use compiler::{interpreter::RuntimeInterpreter, parser::Parser};
 use compiler::{code_generator, token::Token};
+use compiler::{interpreter::RuntimeInterpreter, optimizer, parser::Parser};
 use compiler::{lexer::Lexer, semantic::analyzer::Analyzer};
 
 fn main() {
-    _functions();
+    _optimizer();
+
     // let code_example = code_generator::generate_random_program(5);
     // println!("{}", code_example);
 }
@@ -64,7 +65,7 @@ if (x == 123) {
 }
 
 fn _interpreter() {
-        let code_example = "var y = 123;
+    let code_example = "var y = 123;
 if (y == 123) {
     print y + 5;
     var x = y + 1;
@@ -110,5 +111,39 @@ print abc(x, 2);";
 
     for i in runtime.output() {
         println!("{i}");
+    }
+}
+
+fn _optimizer() {
+    let code_example = "
+var x = 1 + 2 * 3;
+if (1 > 2) {
+    print x;
+} else {
+    print x + 1;
+}
+return x;
+print 999;";
+
+    let lexer = Lexer::new(code_example);
+    let tokens: Vec<Token> = Vec::from_iter(lexer);
+
+    let parser = Parser::new(tokens.into_iter());
+    let original: Vec<_> = parser.collect();
+
+    println!("Original AST:\n{:#?}", original);
+
+    let optimized = optimizer::optimize_statements(original);
+    println!("\nOptimized AST:\n{:#?}", optimized);
+
+    let mut runtime = RuntimeInterpreter::new(optimized.into_iter());
+    if let Err(err) = runtime.execute_program() {
+        eprintln!("Runtime error: {err}");
+        return;
+    }
+
+    println!("\nOutput:");
+    for line in runtime.output() {
+        println!("{line}");
     }
 }

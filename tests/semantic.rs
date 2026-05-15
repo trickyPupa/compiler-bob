@@ -92,5 +92,9 @@ fn allows_function_declaration_and_call() {
 fn reports_undeclared_function_call() {
     let errors = analyze_source("print add(1, 2);");
 
-    assert!(errors.iter().any(|e| e.contains("Undeclared function 'add'")));
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("Undeclared function 'add'"))
+    );
 }

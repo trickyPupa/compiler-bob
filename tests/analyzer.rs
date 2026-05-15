@@ -1,6 +1,5 @@
-
-use compiler::semantic::analyzer::Analyzer;
 use compiler::expression::Expression;
+use compiler::semantic::analyzer::Analyzer;
 use compiler::statement::{
     BlockStatement, ExpressionStatement, PrintStatement, Statement, VarStatement,
 };
@@ -81,9 +80,11 @@ fn reports_duplicate_variable_in_same_scope_with_position() {
 
     analyzer.analyze();
 
-    assert!(analyzer.errors().iter().any(|e| {
-        e.contains("[Line 3, Col 7]") && e.contains("already defined in this scope")
-    }));
+    assert!(
+        analyzer.errors().iter().any(|e| {
+            e.contains("[Line 3, Col 7]") && e.contains("already defined in this scope")
+        })
+    );
 }
 
 #[test]
@@ -116,9 +117,12 @@ fn warns_about_unused_variable_in_block() {
 
     analyzer.analyze();
 
-    assert!(analyzer.warnings().iter().any(|e| {
-        e.contains("[Line 1, Col 1]") && e.contains("declared, but has not used")
-    }));
+    assert!(
+        analyzer
+            .warnings()
+            .iter()
+            .any(|e| { e.contains("[Line 1, Col 1]") && e.contains("declared, but has not used") })
+    );
 }
 
 #[test]
