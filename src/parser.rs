@@ -90,16 +90,20 @@ impl<T: Iterator<Item = Token>> Parser<T> {
         let line = self.current.as_ref().unwrap().line; // TODO replace unwrap
 
         if self.check_type_advance(TokenType::EQ) {
-            let value = self.parse_assignment(); // recursion for a = b = 2
+            let value = self
+                .parse_assignment()
+                .expect("Right-hand side of assignment is expected"); // recursion for a = b = 2
 
-            if let Some(Expression::Variable(name)) = expr {
-                return Some(Expression::Assign(
-                    name,
-                    Box::from(value.expect("Right-hand side of assignment is expected")),
-                ));
-            } else {
-                panic!("[Parser Error] Line {line}: Invalid assigment target.");
-            }
+            return match expr {
+                Some(Expression::Variable(name)) => {
+                    Some(Expression::Assign(name, Box::from(value)))
+                }
+                Some(Expression::Index(target, index)) => {
+                    Some(Expression::AssignIndex(target, index, Box::from(value)))
+                }
+                Some(_) => panic!("[Parser Error] Line {line}: Invalid assigment target."),
+                None => None,
+            };
         }
 
         expr
@@ -260,58 +264,97 @@ impl<T: Iterator<Item = Token>> Parser<T> {
 
     // 9. numbers, variables, brackets
     fn parse_primary(&mut self) -> Option<Expression> {
-        match self.current.as_ref() {
-            Some(token) => match token.ttype {
-                TokenType::NUMBER => {
-                    let double: f64 = token.value.parse().unwrap_or_else(|_| {
-                        panic!("{}", self.generate_panic_message("Invalid number format."))
-                    });
-                    Some(Expression::Number(double))
-                }
-                // TokenType::ID => Some(Expression::Variable(token.value.clone())),
-                TokenType::ID => {
-                    let name = token.value.clone();
-                    if self.peek_next_is(TokenType::LPAREN) {
-                        // consume '(' and advance to first token inside args
-                        self.advance();
-                        self.advance();
+        let token = match self.current.as_ref() {
+            Some(token) => token,
+            None => return None,
+        };
 
-                        let mut args: Vec<Expression> = Vec::new();
-                        if !self.check_type(&[TokenType::RPAREN]) {
-                            loop {
-                                let expr = self
-                                    .parse_expression()
-                                    .expect("Argument expression expected");
-                                args.push(expr);
-                                if self.check_type_advance(TokenType::COMMA) {
-                                    continue;
-                                }
-                                break;
-                            }
-                        }
-
-                        self.peek_type_or_panic(
-                            TokenType::RPAREN,
-                            "')' is required after call arguments",
-                        );
-                        // leave current at RPAREN; do not consume it here
-                        return Some(Expression::Call(name, args));
-                    }
-                    Some(Expression::Variable(name))
-                }
-                TokenType::LPAREN => {
+        let mut expr = match token.ttype {
+            TokenType::NUMBER => {
+                let double: f64 = token.value.parse().unwrap_or_else(|_| {
+                    panic!("{}", self.generate_panic_message("Invalid number format."))
+                });
+                Some(Expression::Number(double))
+            }
+            TokenType::ID => {
+                let name = token.value.clone();
+                if self.peek_next_is(TokenType::LPAREN) {
+                    // consume '(' and advance to first token inside args
                     self.advance();
-                    let expr = self.parse_expression();
+                    self.advance();
+
+                    let mut args: Vec<Expression> = Vec::new();
+                    if !self.check_type(&[TokenType::RPAREN]) {
+                        loop {
+                            let expr = self
+                                .parse_expression()
+                                .expect("Argument expression expected");
+                            args.push(expr);
+                            if self.check_type_advance(TokenType::COMMA) {
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+
                     self.peek_type_or_panic(
                         TokenType::RPAREN,
-                        "\")\" is required after an expression.",
+                        "')' is required after call arguments",
                     );
-                    expr
+                    // leave current at RPAREN; do not consume it here
+                    Some(Expression::Call(name, args))
+                } else {
+                    Some(Expression::Variable(name))
                 }
-                _ => panic!("{}", self.generate_panic_message("Expression is expected.")),
-            },
-            None => None,
+            }
+            TokenType::LPAREN => {
+                self.advance();
+                let expr = self.parse_expression();
+                self.peek_type_or_panic(
+                    TokenType::RPAREN,
+                    "\")\" is required after an expression.",
+                );
+                expr
+            }
+            TokenType::LBRACKET => {
+                self.advance();
+
+                let mut elements: Vec<Expression> = Vec::new();
+                if !self.check_type(&[TokenType::RBRACKET]) {
+                    loop {
+                        let expr = self
+                            .parse_expression()
+                            .expect("Array element expression expected");
+                        elements.push(expr);
+                        if self.check_type_advance(TokenType::COMMA) {
+                            continue;
+                        }
+                        break;
+                    }
+                }
+
+                self.peek_type_or_panic(TokenType::RBRACKET, "']' is required after array literal");
+
+                Some(Expression::ArrayLiteral(elements))
+            }
+            _ => panic!("{}", self.generate_panic_message("Expression is expected.")),
+        }?;
+
+        while self.peek_next_is(TokenType::LBRACKET) {
+            self.advance();
+            self.advance();
+
+            let index_expr = self.parse_expression().expect("Index expression expected");
+
+            self.peek_type_or_panic(
+                TokenType::RBRACKET,
+                "']' is required after index expression",
+            );
+
+            expr = Expression::Index(Box::new(expr), Box::new(index_expr));
         }
+
+        Some(expr)
     }
 }
 

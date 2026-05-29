@@ -119,6 +119,57 @@ fn parse_simple_expression_statement() {
 }
 
 #[test]
+fn parse_array_literal() {
+    let mut parser = get_parser("var xs = [1, 2, 3];");
+
+    let goal = Some(Statement::Var(VarStatement {
+        name: String::from("xs"),
+        initializer: Some(Expression::ArrayLiteral(vec![
+            Expression::Number(1.0f64),
+            Expression::Number(2.0f64),
+            Expression::Number(3.0f64),
+        ])),
+        line: 0,
+        column: 0,
+    }));
+
+    assert_eq!(parser.next(), goal);
+}
+
+#[test]
+fn parse_array_index_expression_statement() {
+    let mut parser = get_parser("xs[1];");
+
+    let goal = Some(Statement::Expression(ExpressionStatement {
+        expression: Expression::Index(
+            Box::new(Expression::Variable(String::from("xs"))),
+            Box::new(Expression::Number(1.0f64)),
+        ),
+        line: 0,
+        column: 0,
+    }));
+
+    assert_eq!(parser.next(), goal);
+}
+
+#[test]
+fn parse_array_index_assignment() {
+    let mut parser = get_parser("xs[1] = 10;");
+
+    let goal = Some(Statement::Expression(ExpressionStatement {
+        expression: Expression::AssignIndex(
+            Box::new(Expression::Variable(String::from("xs"))),
+            Box::new(Expression::Number(1.0f64)),
+            Box::new(Expression::Number(10.0f64)),
+        ),
+        line: 0,
+        column: 0,
+    }));
+
+    assert_eq!(parser.next(), goal);
+}
+
+#[test]
 fn parse_complex_expression_statement() {
     let mut parser = get_parser("1 + 2 < 4 && 23 == 24;");
 

@@ -9,6 +9,7 @@ pub enum RuntimeValue {
     Number(f64),
     Boolean(bool),
     String(String),
+    Array(Vec<RuntimeValue>),
     Function {
         params: Vec<String>,
         body: crate::statement::BlockStatement,
@@ -22,6 +23,7 @@ impl RuntimeValue {
             RuntimeValue::Boolean(value) => *value,
             RuntimeValue::Number(value) => *value != 0.0,
             RuntimeValue::String(value) => !value.is_empty(),
+            RuntimeValue::Array(values) => !values.is_empty(),
             RuntimeValue::Nil => false,
             RuntimeValue::Function { .. } => true,
         }
@@ -34,6 +36,14 @@ impl std::fmt::Display for RuntimeValue {
             RuntimeValue::Number(value) => write!(f, "{value}"),
             RuntimeValue::Boolean(value) => write!(f, "{value}"),
             RuntimeValue::String(value) => write!(f, "{value}"),
+            RuntimeValue::Array(values) => {
+                let joined = values
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                write!(f, "[{joined}]")
+            }
             RuntimeValue::Nil => write!(f, "nil"),
             RuntimeValue::Function { params, .. } => {
                 write!(f, "<fn/{}>", params.len())
@@ -47,6 +57,7 @@ pub enum RuntimeError {
     UndefinedVariable(String),
     TypeError(String),
     DivisionByZero,
+    IndexOutOfBounds { index: usize, len: usize },
     UnsupportedOperator(TokenType),
     Return(RuntimeValue),
 }
@@ -59,6 +70,9 @@ impl std::fmt::Display for RuntimeError {
             }
             RuntimeError::TypeError(message) => write!(f, "Type error: {message}"),
             RuntimeError::DivisionByZero => write!(f, "Division by zero"),
+            RuntimeError::IndexOutOfBounds { index, len } => {
+                write!(f, "Index {index} out of bounds (len {len})")
+            }
             RuntimeError::UnsupportedOperator(operator) => {
                 write!(f, "Unsupported operator: {operator:?}")
             }
@@ -179,9 +193,26 @@ impl<I: Iterator<Item = Statement>> RuntimeInterpreter<I> {
                 .get_value(name)
                 .cloned()
                 .ok_or_else(|| RuntimeError::UndefinedVariable(name.clone())),
+            Expression::ArrayLiteral(values) => {
+                let mut items = Vec::with_capacity(values.len());
+                for value in values {
+                    items.push(self.evaluate_expression(value)?);
+                }
+                Ok(RuntimeValue::Array(items))
+            }
+            Expression::Index(target, index) => {
+                let target_value = self.evaluate_expression(target)?;
+                let index_value = self.evaluate_expression(index)?;
+                self.evaluate_index(target_value, index_value)
+            }
             Expression::Assign(name, value_expression) => {
                 let value = self.evaluate_expression(value_expression)?;
                 self.assign_value(name, value.clone())?;
+                Ok(value)
+            }
+            Expression::AssignIndex(target, index, value_expression) => {
+                let value = self.evaluate_expression(value_expression)?;
+                self.assign_index(target, index, value.clone())?;
                 Ok(value)
             }
             Expression::Call(name, args) => {
@@ -380,6 +411,133 @@ impl<I: Iterator<Item = Statement>> RuntimeInterpreter<I> {
             }
         }
         Err(RuntimeError::UndefinedVariable(name.to_string()))
+    }
+
+    fn get_value_mut(&mut self, name: &str) -> Option<&mut RuntimeValue> {
+        for scope in self.scopes.iter_mut().rev() {
+            if scope.contains_key(name) {
+                return scope.get_mut(name);
+            }
+        }
+        None
+    }
+
+    fn evaluate_index(
+        &self,
+        target: RuntimeValue,
+        index_value: RuntimeValue,
+    ) -> Result<RuntimeValue, RuntimeError> {
+        let index = self.expect_index(index_value)?;
+
+        match target {
+            RuntimeValue::Array(values) => {
+                values
+                    .get(index)
+                    .cloned()
+                    .ok_or(RuntimeError::IndexOutOfBounds {
+                        index,
+                        len: values.len(),
+                    })
+            }
+            other => Err(RuntimeError::TypeError(format!(
+                "Indexing expects array, got {other:?}"
+            ))),
+        }
+    }
+
+    fn expect_index(&self, value: RuntimeValue) -> Result<usize, RuntimeError> {
+        match value {
+            RuntimeValue::Number(number) => {
+                if !number.is_finite() || number.fract() != 0.0 || number < 0.0 {
+                    Err(RuntimeError::TypeError(
+                        "Index must be a non-negative integer".to_string(),
+                    ))
+                } else {
+                    Ok(number as usize)
+                }
+            }
+            other => Err(RuntimeError::TypeError(format!(
+                "Index must be a number, got {other:?}"
+            ))),
+        }
+    }
+
+    fn assign_index(
+        &mut self,
+        target: &Expression,
+        index: &Expression,
+        value: RuntimeValue,
+    ) -> Result<(), RuntimeError> {
+        let mut indices: Vec<&Expression> = Vec::new();
+        let base_name = self
+            .collect_index_chain(target, &mut indices)
+            .ok_or_else(|| {
+                RuntimeError::TypeError("Invalid index assignment target".to_string())
+            })?;
+
+        indices.push(index);
+
+        let mut evaluated_indices: Vec<usize> = Vec::with_capacity(indices.len());
+        for idx_expr in indices {
+            let idx_value = self.evaluate_expression(idx_expr)?;
+            evaluated_indices.push(self.expect_index(idx_value)?);
+        }
+
+        let base_value = self
+            .get_value_mut(base_name)
+            .ok_or_else(|| RuntimeError::UndefinedVariable(base_name.to_string()))?;
+
+        Self::assign_nested_index(base_value, &evaluated_indices, value)
+    }
+
+    fn collect_index_chain<'a>(
+        &self,
+        expr: &'a Expression,
+        indices: &mut Vec<&'a Expression>,
+    ) -> Option<&'a str> {
+        match expr {
+            Expression::Variable(name) => Some(name.as_str()),
+            Expression::Index(target, index) => {
+                let base_name = self.collect_index_chain(target, indices)?;
+                indices.push(index);
+                Some(base_name)
+            }
+            _ => None,
+        }
+    }
+
+    fn assign_nested_index(
+        target: &mut RuntimeValue,
+        indices: &[usize],
+        value: RuntimeValue,
+    ) -> Result<(), RuntimeError> {
+        if indices.is_empty() {
+            return Err(RuntimeError::TypeError(
+                "Missing index for assignment".to_string(),
+            ));
+        }
+
+        match target {
+            RuntimeValue::Array(values) => {
+                let index = indices[0];
+                if index >= values.len() {
+                    return Err(RuntimeError::IndexOutOfBounds {
+                        index,
+                        len: values.len(),
+                    });
+                }
+
+                if indices.len() == 1 {
+                    values[index] = value;
+                    Ok(())
+                } else {
+                    Self::assign_nested_index(&mut values[index], &indices[1..], value)
+                }
+            }
+            other => Err(RuntimeError::TypeError(format!(
+                "Indexing expects array, got {other:?}"
+            ))),
+        }
     }
 
     fn execute_block(&mut self, statements: &[Statement]) -> Result<(), RuntimeError> {

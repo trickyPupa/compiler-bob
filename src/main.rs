@@ -1,9 +1,12 @@
-use compiler::{interpreter::RuntimeInterpreter, parser::Parser};
-use compiler::{code_generator, token::Token};
-use compiler::{lexer::Lexer, semantic::analyzer::Analyzer};
+use compiler::code_generator;
+use compiler::interpreter::RuntimeInterpreter;
+use compiler::lexer::Lexer;
+use compiler::parser::Parser;
+use compiler::semantic::analyzer::Analyzer;
+use compiler::token::Token;
 
 fn main() {
-    _functions();
+    _arrays();
     // let code_example = code_generator::generate_random_program(5);
     // println!("{}", code_example);
 }
@@ -64,7 +67,7 @@ if (x == 123) {
 }
 
 fn _interpreter() {
-        let code_example = "var y = 123;
+    let code_example = "var y = 123;
 if (y == 123) {
     print y + 5;
     var x = y + 1;
@@ -96,6 +99,29 @@ fn abc(a, b) {
     return a + b;
 }
 print abc(x, 2);";
+
+    let lexer = Lexer::new(code_example);
+    let tokens: Vec<Token> = Vec::from_iter(lexer);
+
+    let parser = Parser::new(tokens.into_iter());
+
+    let mut runtime = RuntimeInterpreter::new(parser);
+    if let Err(err) = runtime.execute_program() {
+        eprintln!("Runtime error: {err}");
+        return;
+    }
+
+    for i in runtime.output() {
+        println!("{i}");
+    }
+}
+
+fn _arrays() {
+    let code_example = "var xs = [1, 2, 3];
+print xs[0];
+xs[1] = xs[1] + 5;
+print xs[1];
+print xs;";
 
     let lexer = Lexer::new(code_example);
     let tokens: Vec<Token> = Vec::from_iter(lexer);

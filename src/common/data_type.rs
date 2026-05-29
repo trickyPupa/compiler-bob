@@ -5,6 +5,7 @@ pub enum DataType {
     String,
     Numeric,
     Boolean,
+    Array,
     Unknown,
 }
 

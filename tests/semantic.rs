@@ -94,3 +94,18 @@ fn reports_undeclared_function_call() {
 
     assert!(errors.iter().any(|e| e.contains("Undeclared function 'add'")));
 }
+
+#[test]
+fn allows_array_literal_and_indexing() {
+    let source = "var xs = [1, 2]; print xs[0];";
+    let errors = analyze_source(source);
+
+    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+}
+
+#[test]
+fn reports_indexing_non_array_value() {
+    let errors = analyze_source("var x = 1; print x[0];");
+
+    assert!(errors.iter().any(|e| e.contains("Indexing non-array value")));
+}

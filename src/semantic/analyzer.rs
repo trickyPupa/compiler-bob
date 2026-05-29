@@ -160,6 +160,13 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
             Expression::Number(_) => DataType::Numeric,
             Expression::String(_) => DataType::String,
             Expression::Variable(name) => self.analyze_var_expression(name),
+            Expression::ArrayLiteral(values) => {
+                for value in values {
+                    self.analyze_expression(value);
+                }
+                DataType::Array
+            }
+            Expression::Index(target, index) => self.analyze_index_expression(target, index),
             Expression::Call(name, args) => {
                 for a in args {
                     self.analyze_expression(a);
@@ -178,6 +185,9 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
             Expression::Binary(left, tt, right) => self.analyze_binary_expression(left, tt, right),
             Expression::Unary(_tt, inner) => self.analyze_expression(inner),
             Expression::Assign(name, value) => self.analyze_assign_expression(name, value),
+            Expression::AssignIndex(target, index, value) => {
+                self.analyze_assign_index_expression(target, index, value)
+            }
         }
     }
 
@@ -229,11 +239,14 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         if left == DataType::Unknown || right == DataType::Unknown {
             DataType::Unknown
         } else if left != right {
-            self.errors.push(error_msg);
+            self.errors.push(error_msg.clone());
             DataType::Unknown
         } else {
+            if left == DataType::Array && !matches!(tt, TokenType::EQEQ | TokenType::NEQ) {
+                self.errors.push(error_msg.clone());
+            }
             if left == DataType::Numeric && !NUMERIC_SUPPORTED_OPERATIONS.contains(tt) {
-                self.errors.push(error_msg);
+                self.errors.push(error_msg.clone());
             }
             // todo
             left
@@ -253,6 +266,45 @@ impl<T: Iterator<Item = Statement>> Analyzer<T> {
         }
 
         dtype
+    }
+
+    fn analyze_index_expression(&mut self, target: &Expression, index: &Expression) -> DataType {
+        let target_dtype = self.analyze_expression(target);
+        let index_dtype = self.analyze_expression(index);
+
+        if index_dtype != DataType::Numeric && index_dtype != DataType::Unknown {
+            self.errors
+                .push("Index expression must be numeric.".to_string());
+        }
+
+        if target_dtype != DataType::Array && target_dtype != DataType::Unknown {
+            self.errors.push("Indexing non-array value.".to_string());
+        }
+
+        DataType::Unknown
+    }
+
+    fn analyze_assign_index_expression(
+        &mut self,
+        target: &Expression,
+        index: &Expression,
+        value: &Expression,
+    ) -> DataType {
+        let value_dtype = self.analyze_expression(value);
+
+        let target_dtype = self.analyze_expression(target);
+        let index_dtype = self.analyze_expression(index);
+
+        if index_dtype != DataType::Numeric && index_dtype != DataType::Unknown {
+            self.errors
+                .push("Index expression must be numeric.".to_string());
+        }
+
+        if target_dtype != DataType::Array && target_dtype != DataType::Unknown {
+            self.errors.push("Indexing non-array value.".to_string());
+        }
+
+        value_dtype
     }
 
     pub fn errors(&self) -> &[String] {

@@ -23,6 +23,8 @@ static OPERATOPS_MAP: LazyLock<HashMap<&'static str, TokenType>> = LazyLock::new
         (")", TokenType::RPAREN),
         ("{", TokenType::LBRACE),
         ("}", TokenType::RBRACE),
+        ("[", TokenType::LBRACKET),
+        ("]", TokenType::RBRACKET),
         (";", TokenType::SEMICOLON),
         (",", TokenType::COMMA),
     ])

@@ -144,3 +144,41 @@ fn executes_function_call_and_return() {
 
     assert_eq!(runtime.output(), ["3"]);
 }
+
+#[test]
+fn executes_array_indexing_and_assignment() {
+    let program = vec![
+        var(
+            "xs",
+            Some(Expression::ArrayLiteral(vec![
+                Expression::Number(1.0),
+                Expression::Number(2.0),
+            ])),
+        ),
+        print(Expression::Index(
+            Box::new(Expression::Variable("xs".to_string())),
+            Box::new(Expression::Number(1.0)),
+        )),
+        expr(Expression::AssignIndex(
+            Box::new(Expression::Variable("xs".to_string())),
+            Box::new(Expression::Number(0.0)),
+            Box::new(Expression::Number(5.0)),
+        )),
+        print(Expression::Index(
+            Box::new(Expression::Variable("xs".to_string())),
+            Box::new(Expression::Number(0.0)),
+        )),
+    ];
+
+    let mut runtime = RuntimeInterpreter::new(program.into_iter());
+    runtime.execute_program().expect("program should run");
+
+    assert_eq!(runtime.output(), ["2", "5"]);
+    assert_eq!(
+        runtime.get_value("xs"),
+        Some(&RuntimeValue::Array(vec![
+            RuntimeValue::Number(5.0),
+            RuntimeValue::Number(2.0)
+        ]))
+    );
+}
